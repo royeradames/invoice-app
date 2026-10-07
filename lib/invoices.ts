@@ -309,3 +309,7 @@ export function removeInvoice(library: Library, id: string): Library {
 export function label(invoice: Invoice): string {
   return "INV-" + invoice.id.slice(0, 8).toUpperCase();
 }
+
+export function termsLabel(terms: Draft["terms"]): string {
+  return terms === "1" ? "1 day" : `${terms} days`;
+}

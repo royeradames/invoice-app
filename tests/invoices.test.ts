@@ -18,6 +18,7 @@ import {
   toDraft,
   validatePending,
   type Draft,
+  termsLabel,
 } from "../lib/invoices.ts";
 import { seedLibrary } from "../lib/fixtures.ts";
 import {
@@ -316,4 +317,9 @@ test("collection and item boundaries are independent from the UTF-8 byte limit",
     "failed",
   );
   assert.equal(port.getItem(STORAGE_KEY), unchanged);
+});
+
+test("payment terms read naturally for one day and many days", () => {
+  assert.equal(termsLabel("1"), "1 day");
+  assert.equal(termsLabel("30"), "30 days");
 });

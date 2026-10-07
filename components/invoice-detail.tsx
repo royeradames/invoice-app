@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
+  termsLabel,
   addDays,
   draftTotal,
   label,
@@ -27,7 +28,9 @@ export function InvoiceDetail({ id }: { id: string }) {
     return (
       <main id="main" className="shell">
         <h1>Invoice not found in this browser</h1>
-        <p>This link does not retrieve another browser or account&apos;s records.</p>
+        <p>
+          This link does not retrieve another browser or account&apos;s records.
+        </p>
         <a href="/">Back to invoices</a>
       </main>
     );
@@ -100,7 +103,7 @@ export function InvoiceDetail({ id }: { id: string }) {
           <section>
             <h3>Dates</h3>
             <p>Issue: {draft.issueDate || "Incomplete"}</p>
-            <p>Terms: {draft.terms} days</p>
+            <p>Terms: {termsLabel(draft.terms)}</p>
             <p>
               Due:{" "}
               {invoice.status === "draft"
