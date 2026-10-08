@@ -787,3 +787,36 @@ for (const theme of ["light", "dark"]) {
       ));
   }
 }
+
+for (const theme of ["light", "dark"]) {
+  test(`unchecked filter checkboxes have a 3:1 edge against the menu (${theme})`, () =>
+    fixture(async (page) => {
+      if (theme === "dark") {
+        await page.getByRole("button", { name: "Use dark theme" }).click();
+        await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+      }
+      await page.getByRole("button", { name: /Filter/ }).click();
+      await page.getByRole("checkbox", { name: "Pending" }).waitFor();
+      const ratios = await page.evaluate(() => {
+        const rgba = (v) => {
+          const n = (v.match(/[\d.]+/g) || []).map(Number);
+          return [n[0], n[1], n[2], n[3] ?? 1];
+        };
+        // A transparent edge shows the menu behind it, so blend over the menu.
+        const over = (top, under) => [0, 1, 2].map((i) => top[i] * top[3] + under[i] * (1 - top[3]));
+        const lum = (c) => {
+          const f = (x) => ((x /= 255) <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4);
+          return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+        };
+        const ratio = (a, b) => {
+          const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+          return (x + 0.05) / (y + 0.05);
+        };
+        const menu = rgba(getComputedStyle(document.querySelector(".filter-panel")).backgroundColor);
+        return [...document.querySelectorAll(".filter-option input:not(:checked) + .checkbox")].map((box) =>
+          ratio(over(rgba(getComputedStyle(box).borderTopColor), menu), menu),
+        );
+      });
+      assert.ok(ratios.length > 0 && ratios.every((r) => r >= 3), JSON.stringify(ratios));
+    }));
+}

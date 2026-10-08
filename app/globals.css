@@ -508,7 +508,8 @@ p {
   place-items: center;
   width: 16px;
   height: 16px;
-  border: 1px solid transparent;
+  /* The edge reaches 3:1 against the menu in both themes (WCAG 1.4.11). */
+  border: 1px solid #888eb0;
   border-radius: 2px;
   background: var(--checkbox);
 }
@@ -519,6 +520,7 @@ p {
   border-color: var(--purple);
 }
 .filter-option input:checked + .checkbox {
+  border-color: var(--purple);
   background: var(--purple);
 }
 .filter-option input:checked + .checkbox svg {
