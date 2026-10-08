@@ -83,7 +83,10 @@ export function InvoiceBoard() {
           <span className="plus-circle" aria-hidden="true">
             <PlusIcon />
           </span>
-          New<span className="wide-only">&nbsp;Invoice</span>
+          {/* One flex item, so the button gap never splits the words. */}
+          <span>
+            New<span className="wide-only">&nbsp;Invoice</span>
+          </span>
         </button>
       </header>
       <FlashMessage path="/" ref={flashRef} />

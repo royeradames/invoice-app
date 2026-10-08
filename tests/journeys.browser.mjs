@@ -625,3 +625,39 @@ for (const width of [400, 767]) {
       { width, height: 700, path: "/invoices/XM9141" },
     ));
 }
+
+test("button labels keep normal word spacing: New Invoice, Filter by status", () =>
+  fixture(async (page) => {
+    const gaps = await page.evaluate(() =>
+      [".new-invoice .wide-only", ".filter-button .wide-only"].map((sel) => {
+        const tail = document.querySelector(sel);
+        const head = tail.previousSibling;
+        const range = document.createRange();
+        range.selectNodeContents(head);
+        const headRight = range.getBoundingClientRect().right;
+        range.selectNodeContents(tail);
+        return Math.round(range.getBoundingClientRect().left - headRight);
+      }),
+    );
+    // A space is about 4 px; the 12-16 px flex gap must not land between words.
+    assert.ok(gaps.every((gap) => gap <= 2), JSON.stringify(gaps));
+  }));
+
+for (const width of [768, 1440]) {
+  test(`inputs in an address row stay aligned when errors wrap (${width}px)`, () =>
+    fixture(
+      async (page) => {
+        await openNew(page);
+        await drawer(page).getByRole("button", { name: "Save & Send" }).click();
+        const tops = await drawer(page).evaluate((d) =>
+          [...d.querySelectorAll(".address-grid")].map((grid) =>
+            [...grid.querySelectorAll(":scope > .field:not(.addr-street) input")].map((input) =>
+              Math.round(input.getBoundingClientRect().top),
+            ),
+          ),
+        );
+        for (const row of tops) assert.equal(new Set(row).size, 1, JSON.stringify(tops));
+      },
+      { width },
+    ));
+}

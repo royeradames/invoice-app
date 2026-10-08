@@ -57,7 +57,9 @@ export function FilterMenu({
         aria-controls={panelId}
         onClick={() => setOpen((x) => !x)}
       >
-        Filter<span className="wide-only">&nbsp;by status</span>
+        <span>
+          Filter<span className="wide-only">&nbsp;by status</span>
+        </span>
         {current.length > 0 && <span className="sr-only">, {current.length} selected</span>}
         <ArrowDownIcon className={"filter-arrow" + (open ? " open" : "")} />
       </button>

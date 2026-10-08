@@ -1174,6 +1174,9 @@ p {
   display: grid;
   gap: 8px;
   min-width: 0;
+  /* Sibling fields in a row stretch to the tallest; when one error message
+     wraps under its label, the inputs still line up along the bottom. */
+  align-content: space-between;
 }
 .field-top {
   display: flex;
