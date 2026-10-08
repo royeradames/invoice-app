@@ -617,8 +617,9 @@ for (const width of [400, 767]) {
         const box = await page.evaluate(() => {
           const f = document.querySelector("p.flash").getBoundingClientRect();
           const bar = document.querySelector("header.sidebar").getBoundingClientRect();
-          return { top: f.top, bottom: f.bottom, barBottom: bar.bottom, vh: innerHeight };
+          return { left: f.left, top: f.top, bottom: f.bottom, barBottom: bar.bottom, vh: innerHeight };
         });
+        assert.equal(Math.round(box.left), 24, JSON.stringify(box));
         assert.ok(box.top >= box.barBottom, JSON.stringify(box));
         assert.ok(box.bottom <= box.vh, JSON.stringify(box));
       },
@@ -649,14 +650,18 @@ for (const width of [768, 1440]) {
       async (page) => {
         await openNew(page);
         await drawer(page).getByRole("button", { name: "Save & Send" }).click();
-        const tops = await drawer(page).evaluate((d) =>
-          [...d.querySelectorAll(".address-grid")].map((grid) =>
-            [...grid.querySelectorAll(":scope > .field:not(.addr-street) input")].map((input) =>
-              Math.round(input.getBoundingClientRect().top),
-            ),
-          ),
+        const rows = await drawer(page).evaluate((d) =>
+          [...d.querySelectorAll(".address-grid")].map((grid) => {
+            const fields = [...grid.querySelectorAll(":scope > .field:not(.addr-street)")];
+            return {
+              tops: fields.map((f) => Math.round(f.querySelector("input").getBoundingClientRect().top)),
+              labelHeights: fields.map((f) => Math.round(f.querySelector(".field-top").getBoundingClientRect().height)),
+            };
+          }),
         );
-        for (const row of tops) assert.equal(new Set(row).size, 1, JSON.stringify(tops));
+        // The check only means something if one error wrapped under its label.
+        assert.ok(rows.some((r) => new Set(r.labelHeights).size > 1), JSON.stringify(rows));
+        for (const r of rows) assert.equal(new Set(r.tops).size, 1, JSON.stringify(rows));
       },
       { width },
     ));

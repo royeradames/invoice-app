@@ -1097,7 +1097,8 @@ p {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* Keep a focused field clear of the sticky footer when tabbing. */
+  /* The footer sits directly below this scroll area; keep a focused field
+     24 px inside the area's edges so it never touches the footer. */
   scroll-padding-block: 24px;
   padding: 32px 24px 24px;
 }
@@ -1502,7 +1503,9 @@ p {
   box-shadow: none;
 }
 .detail .flash:not(:empty) {
-  margin: 16px 0 0;
+  /* Vertical only: on phones the page rule centres it in the gutter. */
+  margin-top: 16px;
+  margin-bottom: 0;
 }
 .flash:focus {
   outline: none;
