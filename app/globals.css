@@ -3,41 +3,55 @@
    1440). Text keeps the family 16 px floor where the design uses 13 or 15 px. */
 
 :root {
-  --purple: #7c5dfa;
-  --purple-light: #9277ff;
-  --red: #ec5757;
-  --red-light: #ff9797;
+  /* Text tokens are the design's hues, darkened just enough for 4.5:1 on
+     their backgrounds (WCAG 1.4.3); hovers darken instead of lighten. */
+  --purple: #7352f9;
+  --purple-light: #6243f3;
+  --red: #c93c3c;
+  --danger-bg: #c93c3c;
+  --red-light: #a83030;
   --bg: #f8f8fb;
   --surface: #fff;
   --drawer: #fff;
   --ink: #0c0e16;
-  --muted: #888eb0;
-  --label: #7e88c3;
-  --client: #858bb2;
+  --muted: #666e9a;
+  --label: #5f6bb4;
+  --client: #6a72a1;
   --field-bg: #fff;
-  --field-border: #dfe3fa;
+  /* 3:1 against the field and drawer (WCAG 1.4.11). */
+  --field-border: #888eb0;
   --items-bg: #f9fafe;
   --total-bg: #373b53;
   --sidebar: #373b53;
   --secondary-bg: #f9fafe;
   --secondary-hover: #dfe3fa;
-  --secondary-ink: #7e88c3;
+  --secondary-ink: #5f6bb4;
+  --secondary-hover-ink: #4f5aa0;
   --dark-btn: #373b53;
-  --dark-btn-ink: #888eb0;
+  --dark-btn-ink: #c2c6e0;
   --dark-btn-hover: #0c0e16;
   --draft: #373b53;
   --menu-bg: #fff;
   --menu-shadow: 0 10px 20px rgb(72 84 159 / 25%);
   --card-shadow: 0 10px 10px -10px rgb(72 84 159 / 10%);
   --checkbox: #dfe3fa;
-  --item-title: #777f98;
-  --focus: #7c5dfa;
+  --item-title: #69718a;
+  --pending-ink: #9e5800;
+  --paid-ink: #17795a;
+  --accent-ink: #6243f3;
+  --danger-ink: #a83030;
+  --focus: #7352f9;
   --sidebar-h: 72px;
   font-family: var(--font-spartan), "League Spartan", Arial, Helvetica, sans-serif;
   font-size: 16px;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
+  --red: #ec5757;
+  --accent-ink: #a18cff;
+  --danger-ink: #ff7a7a;
+  --pending-ink: #ff8f00;
+  --paid-ink: #33d69f;
   --bg: #141625;
   --surface: #1e2139;
   --drawer: #141625;
@@ -46,7 +60,7 @@
   --label: #dfe3fa;
   --client: #fff;
   --field-bg: #1e2139;
-  --field-border: #252945;
+  --field-border: #636a9c;
   --items-bg: #252945;
   --total-bg: #0c0e16;
   --sidebar: #1e2139;
@@ -60,7 +74,7 @@
   --menu-shadow: 0 10px 20px rgb(0 0 0 / 25%);
   --card-shadow: none;
   --checkbox: #1e2139;
-  --item-title: #888eb0;
+  --item-title: #959bc0;
   --focus: #c6b8ff;
   color-scheme: dark;
 }
@@ -190,10 +204,10 @@ p {
 }
 .button.secondary:hover {
   background: var(--secondary-hover);
-  color: #7e88c3;
+  color: var(--secondary-hover-ink);
 }
 .button.danger {
-  background: var(--red);
+  background: var(--danger-bg);
   color: #fff;
 }
 .button.danger:hover {
@@ -372,7 +386,7 @@ p {
   padding: 12px 16px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--red) 10%, transparent);
-  color: var(--red);
+  color: var(--danger-ink);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
@@ -494,7 +508,8 @@ p {
   place-items: center;
   width: 16px;
   height: 16px;
-  border: 1px solid transparent;
+  /* The edge reaches 3:1 against the menu in both themes (WCAG 1.4.11). */
+  border: 1px solid #888eb0;
   border-radius: 2px;
   background: var(--checkbox);
 }
@@ -502,9 +517,10 @@ p {
   visibility: hidden;
 }
 .filter-option:hover .checkbox {
-  border-color: var(--purple);
+  border-color: var(--accent-ink);
 }
 .filter-option input:checked + .checkbox {
+  border-color: var(--purple);
   background: var(--purple);
 }
 .filter-option input:checked + .checkbox svg {
@@ -630,15 +646,17 @@ p {
 }
 .badge.pending {
   --tone: #ff8f00;
+  color: var(--pending-ink);
 }
 .badge.paid {
   --tone: #33d69f;
+  color: var(--paid-ink);
 }
 .badge-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--tone);
 }
 
 .empty {
@@ -1122,7 +1140,7 @@ p {
 .group-title {
   margin-bottom: 24px;
   padding: 0;
-  color: var(--purple);
+  color: var(--accent-ink);
   font-weight: 700;
 }
 .stack {
@@ -1211,7 +1229,7 @@ p {
 }
 .input::placeholder {
   color: var(--muted);
-  opacity: 0.6;
+  opacity: 1;
 }
 .input:hover,
 .input:focus {
@@ -1297,7 +1315,7 @@ p {
 }
 .calendar-day:hover,
 .calendar-day.selected {
-  color: var(--purple);
+  color: var(--accent-ink);
 }
 .calendar-day.selected {
   background: color-mix(in srgb, var(--purple) 12%, transparent);
@@ -1430,7 +1448,7 @@ p {
 }
 .add-item:hover {
   background: var(--secondary-hover);
-  color: #7e88c3;
+  color: var(--secondary-hover-ink);
 }
 .add-item.invalid {
   box-shadow: inset 0 0 0 1px var(--red);
