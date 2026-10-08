@@ -548,36 +548,80 @@ for (const [path, selector] of [
     ));
 }
 
-test("drawer item rows fit at 320px with the total on its own line", () =>
+for (const width of [320, 419]) {
+  test(`drawer item rows fit at ${width}px with the total on its own line`, () =>
+    fixture(
+      async (page) => {
+        await openNew(page);
+        await addItem(page, 1, "Brand Guidelines", "9999", "999999.99");
+        const result = await drawer(page).evaluate((d) => {
+          const body = d.querySelector(".drawer-body");
+          const row = d.querySelector(".item-row");
+          const total = d.querySelector(".item-total-value");
+          const lh = parseFloat(getComputedStyle(total).lineHeight) || 22;
+          return {
+            spill: body.scrollWidth - body.clientWidth,
+            rowRight: row.getBoundingClientRect().right <= body.getBoundingClientRect().right,
+            totalOneLine: total.getBoundingClientRect().height < lh * 1.5,
+          };
+        });
+        assert.deepEqual(result, { spill: 0, rowRight: true, totalOneLine: true });
+      },
+      { width },
+    ));
+}
+
+for (const width of [320, 375, 767]) {
+  test(`phone detail at ${width}px: action bar spans the page, Go back stays link-sized`, () =>
+    fixture(
+      async (page) => {
+        const bar = page.locator(".narrow-actions");
+        await bar.waitFor();
+        const box = await bar.boundingBox();
+        assert.equal(Math.round(box.x), 0);
+        assert.equal(Math.round(box.width), width);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
+        const back = await page.locator("a.go-back").boundingBox();
+        assert.equal(Math.round(back.x), 24);
+        assert.ok(back.width < 150, `Go back is ${back.width}px wide`);
+      },
+      { width, path: "/invoices/XM9141" },
+    ));
+}
+
+test("a theme change keeps the latest confirmation", () =>
   fixture(
     async (page) => {
-      await openNew(page);
-      await addItem(page, 1, "Brand Guidelines", "9999", "999999.99");
-      const result = await drawer(page).evaluate((d) => {
-        const body = d.querySelector(".drawer-body");
-        const row = d.querySelector(".item-row");
-        const total = d.querySelector(".item-total-value");
-        const lh = parseFloat(getComputedStyle(total).lineHeight) || 22;
-        return {
-          spill: body.scrollWidth - body.clientWidth,
-          rowRight: row.getBoundingClientRect().right <= body.getBoundingClientRect().right,
-          totalOneLine: total.getBoundingClientRect().height < lh * 1.5,
-        };
-      });
-      assert.deepEqual(result, { spill: 0, rowRight: true, totalOneLine: true });
+      await page.locator(".wide-actions").getByRole("button", { name: "Mark as Paid" }).click();
+      const flash = page.locator('p.flash[role="status"]');
+      await page.waitForFunction(() => document.querySelector("p.flash")?.textContent !== "");
+      assert.equal(await flash.innerText(), "Invoice #XM9141 is now paid.");
+      await page.getByRole("button", { name: "Use dark theme" }).click();
+      await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+      assert.equal(await flash.innerText(), "Invoice #XM9141 is now paid.");
     },
-    { width: 320 },
+    { path: "/invoices/XM9141" },
   ));
 
-test("phone detail: action bar spans the page with no horizontal spill", () =>
-  fixture(
-    async (page) => {
-      const bar = page.locator(".narrow-actions");
-      await bar.waitFor();
-      const box = await bar.boundingBox();
-      assert.equal(Math.round(box.x), 0);
-      assert.equal(Math.round(box.width), 375);
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 375);
-    },
-    { width: 375, path: "/invoices/XM9141" },
-  ));
+for (const width of [400, 767]) {
+  test(`after Save Changes at ${width}px the confirmation is focused and below the top bar`, () =>
+    fixture(
+      async (page) => {
+        await page.locator(".narrow-actions").getByRole("button", { name: "Edit" }).click();
+        await drawer(page).getByLabel("Client’s Name").fill("Sample Client E");
+        await drawer(page).getByRole("button", { name: "Save Changes" }).click();
+        await drawer(page).waitFor({ state: "detached" });
+        const flash = page.locator('p.flash[role="status"]');
+        await page.waitForFunction(() => document.activeElement?.classList.contains("flash"));
+        assert.match(await flash.innerText(), /^Changes saved\./);
+        const box = await page.evaluate(() => {
+          const f = document.querySelector("p.flash").getBoundingClientRect();
+          const bar = document.querySelector("header.sidebar").getBoundingClientRect();
+          return { top: f.top, bottom: f.bottom, barBottom: bar.bottom, vh: innerHeight };
+        });
+        assert.ok(box.top >= box.barBottom, JSON.stringify(box));
+        assert.ok(box.bottom <= box.vh, JSON.stringify(box));
+      },
+      { width, height: 700, path: "/invoices/XM9141" },
+    ));
+}

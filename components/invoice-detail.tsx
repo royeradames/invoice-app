@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FlashMessage } from "./flash-message";
 import { SlowHint } from "./slow-hint";
 import {
@@ -57,6 +57,14 @@ export function InvoiceDetail({ id }: { id: string }) {
   const [pending, setPending] = useState<"" | "paid" | "delete">("");
   const lockedRef = useRef(false);
   const statusRef = useRef<HTMLDivElement>(null);
+  const flashRef = useRef<HTMLParagraphElement>(null);
+  // After an edit is saved, the drawer hands focus back to Edit, which on a
+  // phone sits at the foot of the page, far from the confirmation. Move focus
+  // to the confirmation so it scrolls into view and is read out.
+  const [savedTick, setSavedTick] = useState(0);
+  useEffect(() => {
+    if (savedTick) flashRef.current?.focus();
+  }, [savedTick]);
   const invoice = library.invoices.find((x) => x.id === id);
   if (!ready)
     return (
@@ -146,7 +154,7 @@ export function InvoiceDetail({ id }: { id: string }) {
         </div>
         {actions("wide-actions")}
       </section>
-      <FlashMessage path={path} />
+      <FlashMessage path={path} ref={flashRef} />
       <SlowHint
         active={pending === "paid"}
         text="Still saving. Another tab may be using your invoices; this finishes when it lets go."
@@ -243,7 +251,10 @@ export function InvoiceDetail({ id }: { id: string }) {
           invoice={invoice}
           onClose={(text) => {
             setEditing(false);
-            if (text) setFlash({ text, path });
+            if (text) {
+              setFlash({ text, path });
+              setSavedTick((n) => n + 1);
+            }
           }}
         />
       )}

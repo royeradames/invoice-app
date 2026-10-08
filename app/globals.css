@@ -69,6 +69,13 @@
     --sidebar-h: 80px;
   }
 }
+/* Below 1024 px the top bar is sticky; anything scrolled into view by focus
+   lands below it instead of under it. */
+@media (max-width: 1023px) {
+  html {
+    scroll-padding-top: calc(var(--sidebar-h) + 16px);
+  }
+}
 *,
 *::before,
 *::after {
@@ -735,15 +742,20 @@ p {
 @media (max-width: 767px) {
   .page.detail {
     width: 100%;
+  }
+  .page.detail:has(> .narrow-actions) {
     padding-bottom: 0;
   }
-  .page.detail > :not(dialog):not(.narrow-actions) {
+  .page.detail > :not(dialog, .narrow-actions, .sr-only, .go-back) {
     width: min(730px, 100% - 48px);
     margin-inline: auto;
   }
+  /* Below 768 px the gutter is always 24 px; keep the link's tap target and
+     focus ring the size of the link itself. */
   .page.detail > .go-back {
     display: flex;
-    width: min(730px, 100% - 48px);
+    width: fit-content;
+    margin-inline: 24px;
   }
 }
 .narrow-actions .button {
@@ -1085,6 +1097,8 @@ p {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Keep a focused field clear of the sticky footer when tabbing. */
+  scroll-padding-block: 24px;
   padding: 32px 24px 24px;
 }
 .drawer-title {

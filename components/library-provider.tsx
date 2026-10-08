@@ -152,9 +152,6 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       if (result.kind !== "saved") return { ok: false, message: result.message };
       apply(result.snapshot);
       setIssue(null);
-      // Any later change makes an earlier confirmation stale; callers that
-      // confirm this change set their message after this returns.
-      setFlash(null);
       return { ok: true };
     } catch (error) {
       return {
@@ -176,7 +173,14 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         library: snapshot.library,
         ready,
         busy,
-        commit: (change) => persist(change, false),
+        commit: async (change) => {
+          const result = await persist(change, false);
+          // A later invoice change makes an earlier confirmation stale; callers
+          // that confirm this change set their message after this returns. The
+          // theme toggle also saves, but leaves the confirmation alone.
+          if (result.ok) setFlash(null);
+          return result;
+        },
         flash,
         setFlash,
       }}
@@ -294,7 +298,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
                 setResetting(true);
                 const result = await persist(() => seedLibrary, true);
                 setResetting(false);
-                if (result.ok) setResetOpen(false);
+                if (result.ok) {
+                  setResetOpen(false);
+                  setFlash(null);
+                }
                 setNoticeError(result.ok ? "" : result.message);
               }}
             >
