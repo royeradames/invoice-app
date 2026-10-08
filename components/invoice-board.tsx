@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   displayDate,
   invoiceTotal,
@@ -10,6 +10,7 @@ import {
   type Filter,
 } from "../lib/invoices.ts";
 import { FilterMenu } from "./filter-menu";
+import { FlashMessage } from "./flash-message";
 import { ArrowRightIcon, PlusIcon } from "./icons";
 import { InvoiceForm } from "./invoice-form";
 import { useLibrary } from "./library-provider";
@@ -34,17 +35,24 @@ function countText(total: number, filter: Filter, visible: number) {
 }
 
 export function InvoiceBoard() {
-  const { library, ready, busy, commit } = useLibrary();
+  const { library, ready, busy, commit, flash, setFlash } = useLibrary();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // Arriving here after a delete: put focus on the heading under the message.
+  const [arrivedWithFlash] = useState(() => flash?.path === "/");
+  useEffect(() => {
+    if (arrivedWithFlash) headingRef.current?.focus();
+  }, [arrivedWithFlash]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const visible = visibleInvoices(library);
   const count = countText(library.invoices.length, library.filter, visible.length);
   return (
     <main id="main" className="page">
       <header className="list-header">
         <div className="list-title">
-          <h1>Invoices</h1>
+          <h1 ref={headingRef} tabIndex={-1}>
+            Invoices
+          </h1>
           <p className="muted" aria-live="polite">
             {!ready ? (
               "Opening saved invoices…"
@@ -69,7 +77,7 @@ export function InvoiceBoard() {
           className="button primary new-invoice"
           onClick={() => {
             if (!ready) return;
-            setMessage("");
+            setFlash(null);
             setCreating(true);
           }}
         >
@@ -79,6 +87,7 @@ export function InvoiceBoard() {
           New<span className="wide-only">&nbsp;Invoice</span>
         </button>
       </header>
+      <FlashMessage path="/" />
       {error && (
         <p role="alert" className="form-alert">
           {error}
@@ -127,14 +136,11 @@ export function InvoiceBoard() {
           )}
         </section>
       )}
-      <p className="sr-only" role="status">
-        {message}
-      </p>
       {creating && (
         <InvoiceForm
           onClose={(text) => {
             setCreating(false);
-            setMessage(text ?? "");
+            if (text) setFlash({ text, path: "/" });
           }}
         />
       )}

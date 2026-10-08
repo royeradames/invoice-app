@@ -56,8 +56,12 @@ export function DatePicker({
   const grid = useRef<HTMLDivElement>(null);
   const popId = useId();
   const { y, m } = parts(focusDate);
+  // Move focus into the grid only when the calendar opens or a key moves the
+  // day; the month buttons keep their own focus.
+  const focusGrid = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !focusGrid.current) return;
+    focusGrid.current = false;
     grid.current
       ?.querySelector<HTMLButtonElement>(`[data-date="${focusDate}"]`)
       ?.focus();
@@ -89,6 +93,12 @@ export function DatePicker({
     <div
       className="date-picker"
       ref={wrapper}
+      onBlur={(event) => {
+        // Safari leaves relatedTarget null on clicks, so only a real focus
+        // move elsewhere closes the calendar.
+        const next = event.relatedTarget as Node | null;
+        if (open && next && !wrapper.current?.contains(next)) setOpen(false);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Escape" && open) {
           // Close only the calendar, not the drawer around it.
@@ -110,6 +120,7 @@ export function DatePicker({
         aria-describedby={describedBy}
         onClick={() => {
           setFocusDate(isCalendarDate(value) ? value : isoDate(new Date()));
+          focusGrid.current = !open;
           setOpen((x) => !x);
         }}
       >
@@ -156,9 +167,18 @@ export function DatePicker({
                 PageUp: [0, -1],
                 PageDown: [0, 1],
               };
-              const s = step[event.key];
+              const p = parts(focusDate);
+              const weekday = (new Date(p.y, p.m, p.d).getDay() + 6) % 7;
+              // Home and End go to the start and end of the week (Monday-Sunday).
+              const s =
+                event.key === "Home"
+                  ? ([-weekday, 0] as [number, number])
+                  : event.key === "End"
+                    ? ([6 - weekday, 0] as [number, number])
+                    : step[event.key];
               if (!s) return;
               event.preventDefault();
+              focusGrid.current = true;
               setFocusDate(move(focusDate, s[0], s[1]));
             }}
           >

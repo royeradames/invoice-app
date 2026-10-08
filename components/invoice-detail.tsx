@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { FlashMessage } from "./flash-message";
+import { SlowHint } from "./slow-hint";
 import {
   addressLines,
   displayDate,
@@ -44,11 +46,11 @@ function AddressBlock({ address, className }: { address: Address; className?: st
 }
 
 export function InvoiceDetail({ id }: { id: string }) {
-  const { library, ready, busy, commit } = useLibrary();
+  const { library, ready, busy, commit, setFlash } = useLibrary();
+  const path = "/invoices/" + id;
   const router = useRouter();
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
-  const [message, setMessage] = useState("");
   const [deleting, setDeleting] = useState(false);
   // Busy, not disabled: the control that started a write shows aria-busy and
   // keeps focus; every action ignores activation while a write is pending.
@@ -93,7 +95,7 @@ export function InvoiceDetail({ id }: { id: string }) {
     lockedRef.current = false;
     setPending("");
     setError(result.ok ? "" : result.message);
-    if (result.ok) setMessage("Invoice #" + id + " marked as paid.");
+    if (result.ok) setFlash({ text: "Invoice #" + id + " is now paid.", path });
     // The button leaves with the pending status; keep focus nearby.
     if (result.ok) statusRef.current?.focus();
   }
@@ -104,7 +106,7 @@ export function InvoiceDetail({ id }: { id: string }) {
         className="button secondary"
         onClick={() => {
           if (blocked()) return;
-          setMessage("");
+          setFlash(null);
           setEditing(true);
         }}
       >
@@ -144,6 +146,11 @@ export function InvoiceDetail({ id }: { id: string }) {
         </div>
         {actions("wide-actions")}
       </section>
+      <FlashMessage path={path} />
+      <SlowHint
+        active={pending === "paid"}
+        text="Still saving. Another tab may be using your invoices; this finishes when it lets go."
+      />
       {error && !deleting && (
         <p role="alert" className="form-alert">
           {error}
@@ -212,8 +219,8 @@ export function InvoiceDetail({ id }: { id: string }) {
             {invoice.items.map((item) => (
               <li key={item.id}>
                 <span>
-                  <span className="item-name">{item.name || "Unnamed item"}</span>
-                  <span className="item-qty">
+                  <span className="li-name">{item.name || "Unnamed item"}</span>
+                  <span className="li-qty">
                     {(item.quantity ?? "–") +
                       " x " +
                       (item.priceMinor === null ? "–" : money(item.priceMinor))}
@@ -231,15 +238,12 @@ export function InvoiceDetail({ id }: { id: string }) {
         </div>
       </article>
       {actions("narrow-actions")}
-      <p className="sr-only" role="status">
-        {message}
-      </p>
       {editing && (
         <InvoiceForm
           invoice={invoice}
           onClose={(text) => {
             setEditing(false);
-            setMessage(text ?? "");
+            if (text) setFlash({ text, path });
           }}
         />
       )}
@@ -257,6 +261,7 @@ export function InvoiceDetail({ id }: { id: string }) {
             setPending("delete");
             const result = await commit((current) => removeInvoice(current, id));
             if (result.ok) {
+              setFlash({ text: "Invoice #" + id + " was deleted.", path: "/" });
               // Stay busy and locked until the list replaces this page.
               router.replace("/");
               return;
@@ -286,6 +291,10 @@ function DeleteDialog({
 }) {
   return (
     <Dialog title="Confirm Deletion" busy={pending} error={error} cancel={cancel}>
+      <SlowHint
+        active={pending}
+        text="Still deleting. Another tab may be using your invoices; this finishes when it lets go."
+      />
       <p className="dialog-text">
         Are you sure you want to delete invoice #{invoice.id}? This action cannot be undone.
       </p>

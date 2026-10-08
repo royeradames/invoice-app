@@ -84,9 +84,9 @@ async function fillComplete(page) {
 async function addItem(page, n, name, qty, price) {
   const d = drawer(page);
   await d.getByRole("button", { name: "+ Add New Item" }).click();
-  await d.getByLabel("Item Name for item " + n).fill(name);
-  await d.getByLabel("Qty. for item " + n).fill(qty);
-  await d.getByLabel("Price for item " + n).fill(price);
+  await d.getByRole("textbox", { name: "Item Name for item " + n }).fill(name);
+  await d.getByRole("textbox", { name: "Qty. for item " + n }).fill(qty);
+  await d.getByRole("textbox", { name: "Price for item " + n }).fill(price);
 }
 
 test("list opens with the brief's data.json invoices and identity metadata", () =>
@@ -183,6 +183,11 @@ test("Save as Draft keeps a partial invoice with a new AA0000 ID", () =>
     assert.equal(await rows(page).count(), 8);
     const row = rows(page).last();
     assert.match(await row.innerText(), /#[A-Z]{2}\d{4}[\s\S]*Partial Client[\s\S]*£\s0\.00[\s\S]*Draft/);
+    // A visible, announced confirmation names the new status.
+    const id = (await row.locator(".row-id").innerText()).replace("#", "");
+    const flash = page.locator('p.flash[role="status"]');
+    assert.equal(await flash.innerText(), "Invoice #" + id + " saved as a draft.");
+    assert.ok(await flash.isVisible());
     // Focus returns to New Invoice.
     assert.match(await page.evaluate(() => document.activeElement?.textContent ?? ""), /New/);
     await page.reload();
@@ -203,10 +208,10 @@ test("Save & Send creates a pending invoice; items add, remove and total", () =>
     await addItem(page, 2, "Email Design", "2", "200");
     await addItem(page, 3, "Spare", "3", "1");
     const totals = d.locator(".item-total-value");
-    await d.getByLabel("Item Name for item 1").focus(); // blur the last price
+    await d.getByRole("textbox", { name: "Item Name for item 1" }).focus(); // blur the last price
     assert.equal((await totals.allInnerTexts()).join("|"), "156.00|400.00|3.00");
     assert.equal(await totals.count(), 3);
-    assert.equal(await d.getByLabel("Price for item 1").inputValue(), "156.00");
+    assert.equal(await d.getByRole("textbox", { name: "Price for item 1" }).inputValue(), "156.00");
     await d.getByRole("button", { name: "Delete item 3: Spare" }).click();
     assert.equal(await totals.count(), 2);
     await d.getByRole("button", { name: "Save & Send" }).click();
@@ -220,6 +225,29 @@ test("Save & Send creates a pending invoice; items add, remove and total", () =>
     assert.ok(await page.locator(".amount-due").getByText("£ 556.00").isVisible());
   }));
 
+test("deleting the first of three items keeps the other rows' values and totals", () =>
+  fixture(async (page) => {
+    await openNew(page);
+    const d = drawer(page);
+    await addItem(page, 1, "First", "1", "10");
+    await addItem(page, 2, "Second", "2", "20");
+    await addItem(page, 3, "Third", "3", "30");
+    await d.getByRole("button", { name: "Delete item 1: First" }).click();
+    const values = await d.locator(".item-row").evaluateAll((rows) =>
+      rows.map((row) => [...row.querySelectorAll("input")].map((i) => i.value).join("/")),
+    );
+    assert.deepEqual(values, ["Second/2/20.00", "Third/3/30.00"]);
+    assert.equal((await d.locator(".item-total-value").allInnerTexts()).join("|"), "40.00|90.00");
+    await page.waitForFunction(
+      () => document.activeElement?.textContent?.trim() === "Delete item 1: Second",
+      null,
+      { timeout: 2000 },
+    );
+    // Typing into the shifted row edits that row, not its old index.
+    await d.getByRole("textbox", { name: "Qty. for item 1" }).fill("5");
+    assert.equal((await d.locator(".item-total-value").allInnerTexts()).join("|"), "100.00|90.00");
+  }));
+
 test("calendar picks a date by keyboard and shows the design format", () =>
   fixture(async (page) => {
     await openNew(page);
@@ -231,6 +259,19 @@ test("calendar picks a date by keyboard and shows the design format", () =>
     await page.keyboard.press("Enter");
     assert.equal((await button.innerText()).trim(), today(1));
     assert.equal(await page.evaluate(() => document.activeElement?.id), "f-createdAt");
+    // Month buttons keep focus; Home and End move within the week.
+    await button.click();
+    await d.getByRole("button", { name: "Next month" }).click();
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Next month");
+    await page.keyboard.press("Escape");
+    await button.click();
+    await page.keyboard.press("End");
+    const end = await page.evaluate(() => document.activeElement?.getAttribute("data-date"));
+    assert.equal(new Date(end + "T12:00:00").getDay(), 0);
+    await page.keyboard.press("Home");
+    const start = await page.evaluate(() => document.activeElement?.getAttribute("data-date"));
+    assert.equal(new Date(start + "T12:00:00").getDay(), 1);
+    await page.keyboard.press("Escape");
     // Escape closes only the calendar; the drawer stays open.
     await button.click();
     await page.keyboard.press("Escape");
@@ -271,6 +312,10 @@ test("edit: Cancel discards changes; Save Changes on a draft makes it pending", 
     await d.getByRole("button", { name: "Save Changes" }).click();
     await d.waitFor({ state: "detached" });
     assert.equal(await page.locator(".status .badge").innerText(), "Pending");
+    assert.equal(
+      await page.locator('p.flash[role="status"]').innerText(),
+      "Changes saved. Invoice #FV2353 is now pending. No email was sent.",
+    );
     assert.ok(await page.getByRole("button", { name: "Mark as Paid" }).first().isVisible());
   }));
 
@@ -303,6 +348,29 @@ test("Mark as Paid stays focusable and busy, then marks paid once", () =>
     },
   ));
 
+test("a slow save shows busy text at once and a still-working hint after 3 s", () =>
+  fixture(
+    async (page) => {
+      await openNew(page);
+      const d = drawer(page);
+      await d.getByLabel("Client’s Name").fill("Slow Client");
+      await d.getByRole("button", { name: "Save as Draft" }).click();
+      const busy = d.locator('button[aria-busy="true"]');
+      await busy.waitFor({ timeout: 100 });
+      assert.equal(await busy.innerText(), "Saving…");
+      await d.getByText(/^Still saving\./).waitFor({ timeout: 4000 });
+      await d.waitFor({ state: "detached", timeout: 8000 });
+    },
+    {
+      setup: () => {
+        if (!navigator.locks) return;
+        const original = navigator.locks.request.bind(navigator.locks);
+        navigator.locks.request = (name, work) =>
+          original(name, () => new Promise((r) => setTimeout(r, 4500)).then(work));
+      },
+    },
+  ));
+
 test("Delete asks for confirmation; Cancel keeps it; Delete removes it", () =>
   fixture(async (page) => {
     await rows(page).filter({ hasText: "XM9141" }).click();
@@ -324,10 +392,22 @@ test("Delete asks for confirmation; Cancel keeps it; Delete removes it", () =>
     await page.waitForURL(new URL("/", target).href);
     await page.getByText("There are 6 total invoices").waitFor();
     assert.equal(await rows(page).filter({ hasText: "XM9141" }).count(), 0);
+    const flash = page.locator('p.flash[role="status"]');
+    assert.equal(await flash.innerText(), "Invoice #XM9141 was deleted.");
+    assert.ok(await flash.isVisible());
+    assert.equal(await page.evaluate(() => document.activeElement?.tagName), "H1");
   }));
 
-test("theme toggles, persists after reload and applies before first paint", () =>
-  fixture(async (page) => {
+test("theme toggles, persists after reload and never flashes light", () =>
+  fixture(async (page, context) => {
+    await context.addInitScript(() => {
+      // Record every theme the document takes from first paint to hydration.
+      window.__themes = [];
+      if (location.protocol !== "http:" || !document.documentElement) return;
+      new MutationObserver(() =>
+        window.__themes.push(document.documentElement.dataset.theme ?? "none"),
+      ).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    });
     await page.getByRole("button", { name: "Use dark theme" }).click();
     await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
     const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
@@ -337,6 +417,11 @@ test("theme toggles, persists after reload and applies before first paint", () =
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
     await ready(page);
     assert.ok(await page.getByRole("button", { name: "Use light theme" }).isVisible());
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
+    assert.deepEqual(
+      (await page.evaluate(() => window.__themes)).filter((t) => t !== "dark"),
+      [],
+    );
   }));
 
 test("keyboard: New Invoice opens the drawer, Escape closes it and focus returns", () =>
@@ -417,3 +502,38 @@ test("no native disabled controls, and no text under 16 px, on list, detail and 
     await page.getByText("Amount Due").waitFor();
     await check("detail");
   }));
+
+test("detail pages declare the site name and WebSite JSON-LD too", () =>
+  fixture(
+    async (page) => {
+      assert.equal(
+        await page.locator('meta[property="og:site_name"]').getAttribute("content"),
+        "Invoice demo",
+      );
+      const ld = JSON.parse(await page.locator('script[type="application/ld+json"]').innerText());
+      assert.equal(ld["@type"], "WebSite");
+    },
+    { path: "/invoices/XM9141" },
+  ));
+
+for (const [path, selector] of [
+  ["/", ".row-due, .row-client, .row-amount"],
+  ["/invoices/FV2353", ".meta-value, .li-qty, .line-total"],
+]) {
+  test(`no squeezed or split text at 320px on ${path}`, () =>
+    fixture(
+      async (page) => {
+        await page.locator(selector).first().waitFor();
+        const multi = await page.locator(selector).evaluateAll((els) =>
+          els
+            .filter((el) => {
+              const lh = parseFloat(getComputedStyle(el).lineHeight) || 22;
+              return el.getBoundingClientRect().height > lh * 1.5 && !el.textContent.includes(" ") === false && el.textContent.length < 20;
+            })
+            .map((el) => el.textContent),
+        );
+        assert.deepEqual(multi, []);
+      },
+      { width: 320, path },
+    ));
+}

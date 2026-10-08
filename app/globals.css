@@ -558,6 +558,7 @@ p {
   grid-area: due;
   margin-top: 24px;
   color: var(--muted);
+  white-space: nowrap;
 }
 .row-amount {
   grid-area: amount;
@@ -725,9 +726,11 @@ p {
   display: none;
 }
 .narrow-actions {
-  margin: 56px -24px -64px;
+  margin-top: 24px;
   padding: 22px 24px;
+  border-radius: 8px;
   background: var(--surface);
+  box-shadow: var(--card-shadow);
 }
 .narrow-actions .button {
   padding: 0 20px;
@@ -812,6 +815,22 @@ p {
 .meta-bill .address {
   margin-top: 8px;
 }
+/* Very narrow phones: one column so dates and names never wrap mid-word. */
+@media (max-width: 359px) {
+  .sheet-meta {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "dates"
+      "bill"
+      "email";
+  }
+  .invoice-row {
+    padding: 20px 16px;
+  }
+  .narrow-actions {
+    padding: 16px;
+  }
+}
 @media (min-width: 768px) {
   .invoice-sheet {
     margin-top: 24px;
@@ -852,6 +871,7 @@ p {
 }
 .items-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -859,14 +879,20 @@ p {
 }
 .items-list li > span:first-child {
   display: grid;
+  flex: 1 1 9rem;
   gap: 8px;
   min-width: 0;
 }
-.item-name {
+.items-list .line-total {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.li-name {
   overflow-wrap: anywhere;
 }
-.item-qty {
+.li-qty {
   color: var(--label);
+  white-space: nowrap;
 }
 .line-total {
   font-weight: 700;
@@ -1347,6 +1373,23 @@ p {
     width: 32px;
   }
 }
+@media (max-width: 419px) {
+  .item-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) 48px;
+    grid-template-areas:
+      "name name name"
+      "qty price delete"
+      "total total total";
+  }
+  .item-total {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .item-total-value {
+    min-height: 0;
+  }
+}
 .add-item {
   width: 100%;
   margin-top: 24px;
@@ -1407,4 +1450,40 @@ p {
   .drawer-footer .button {
     padding: 0 24px;
   }
+}
+
+/* ---------- confirmations ---------- */
+.flash {
+  margin: 0 0 24px;
+  padding: 12px 16px;
+  border-left: 4px solid #33d69f;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+/* Kept in the page while empty so screen readers announce the next message. */
+.flash:empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+.detail .flash:not(:empty) {
+  margin: 16px 0 0;
+}
+.list-title h1:focus {
+  outline: none;
+}
+.list-title h1:focus-visible {
+  outline: 2px solid var(--focus);
+}
+
+.slow-hint {
+  margin: 0;
+  color: var(--muted);
+}
+.slow-hint:not(:empty) {
+  margin: 16px 0 0;
 }

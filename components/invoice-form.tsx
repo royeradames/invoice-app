@@ -19,6 +19,7 @@ import {
   type Invoice,
 } from "../lib/invoices.ts";
 import { DatePicker } from "./date-picker";
+import { SlowHint } from "./slow-hint";
 import { trapTab } from "./dialog";
 import { ArrowLeftIcon, DeleteIcon } from "./icons";
 import { useLibrary } from "./library-provider";
@@ -36,10 +37,13 @@ function Field({
   label,
   error,
   className,
+  srSuffix,
   children,
 }: {
   path: string;
   label: ReactNode;
+  /** Extra words for screen readers only, kept out of the visible label box. */
+  srSuffix?: string;
   error?: string;
   className?: string;
   children: ReactNode;
@@ -56,6 +60,11 @@ function Field({
           </span>
         )}
       </div>
+      {srSuffix && (
+        <span id={domId(path) + "-sr"} className="sr-only">
+          {srSuffix}
+        </span>
+      )}
       {children}
     </div>
   );
@@ -88,6 +97,10 @@ export function InvoiceForm({
   const addRef = useRef<HTMLButtonElement>(null);
   const alertRef = useRef<HTMLParagraphElement>(null);
   const pendingFocus = useRef<string | null>(null);
+  const errorsRef = useRef(errors);
+  useEffect(() => {
+    errorsRef.current = errors;
+  });
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -105,8 +118,8 @@ export function InvoiceForm({
       '[aria-invalid="true"], .date-button.invalid',
     );
     if (first) first.focus();
-    else if (errors.items) addRef.current?.focus();
-  }, [focusTick, errors.items]);
+    else if (errorsRef.current.items) addRef.current?.focus();
+  }, [focusTick]);
   useEffect(() => {
     if (saveError) alertRef.current?.focus();
   }, [saveError]);
@@ -164,10 +177,12 @@ export function InvoiceForm({
     }
     onClose(
       invoice
-        ? "Saved changes to invoice #" + savedId + "."
+        ? invoice.status === "draft"
+          ? "Changes saved. Invoice #" + savedId + " is now pending. No email was sent."
+          : "Changes saved. Invoice #" + savedId + " is still " + invoice.status + "."
         : intent === "draft"
-          ? "Saved invoice #" + savedId + " as a draft."
-          : "Saved invoice #" + savedId + " as pending. No email was sent.",
+          ? "Invoice #" + savedId + " saved as a draft."
+          : "Invoice #" + savedId + " saved as pending. No email was sent.",
     );
   }
   const describe = (path: string) => (errors[path] ? domId(path) + "-error" : undefined);
@@ -352,21 +367,23 @@ export function InvoiceForm({
                     const base = "items." + item.id + ".";
                     const n = index + 1;
                     return (
+                      // Fields are named by index, so each one remounts (key) when
+                      // a row above is removed and its index changes.
                       <li key={item.id} className="item-row">
-                        <form.Field name={`items[${index}].name`}>
+                        <form.Field key={item.id + "-name-" + index} name={`items[${index}].name`}>
                           {(field) => (
                             <Field
                               path={base + "name"}
-                              label={
-                                <>
-                                  Item Name<span className="sr-only"> for item {n}</span>
-                                </>
-                              }
+                              label="Item Name"
+                              srSuffix={"for item " + n}
                               error={errors[base + "name"]}
                               className="item-name"
                             >
                               <input
                                 id={domId(base + "name")}
+                                aria-labelledby={
+                                  domId(base + "name") + "-label " + domId(base + "name") + "-sr"
+                                }
                                 className={"input" + (errors[base + "name"] ? " invalid" : "")}
                                 maxLength={100}
                                 autoComplete="off"
@@ -382,20 +399,20 @@ export function InvoiceForm({
                             </Field>
                           )}
                         </form.Field>
-                        <form.Field name={`items[${index}].quantity`}>
+                        <form.Field key={item.id + "-quantity-" + index} name={`items[${index}].quantity`}>
                           {(field) => (
                             <Field
                               path={base + "quantity"}
-                              label={
-                                <>
-                                  Qty.<span className="sr-only"> for item {n}</span>
-                                </>
-                              }
+                              label="Qty."
+                              srSuffix={"for item " + n}
                               error={errors[base + "quantity"]}
                               className="item-qty"
                             >
                               <input
                                 id={domId(base + "quantity")}
+                                aria-labelledby={
+                                  domId(base + "quantity") + "-label " + domId(base + "quantity") + "-sr"
+                                }
                                 className={
                                   "input" + (errors[base + "quantity"] ? " invalid" : "")
                                 }
@@ -414,20 +431,20 @@ export function InvoiceForm({
                             </Field>
                           )}
                         </form.Field>
-                        <form.Field name={`items[${index}].price`}>
+                        <form.Field key={item.id + "-price-" + index} name={`items[${index}].price`}>
                           {(field) => (
                             <Field
                               path={base + "price"}
-                              label={
-                                <>
-                                  Price<span className="sr-only"> for item {n}</span>
-                                </>
-                              }
+                              label="Price"
+                              srSuffix={"for item " + n}
                               error={errors[base + "price"]}
                               className="item-price"
                             >
                               <input
                                 id={domId(base + "price")}
+                                aria-labelledby={
+                                  domId(base + "price") + "-label " + domId(base + "price") + "-sr"
+                                }
                                 className={"input" + (errors[base + "price"] ? " invalid" : "")}
                                 inputMode="decimal"
                                 maxLength={10}
@@ -451,14 +468,13 @@ export function InvoiceForm({
                         </form.Field>
                         <div className="field item-total">
                           <div className="field-top">
-                            <span className="label-text">
-                              Total<span className="sr-only"> for item {n}:</span>
-                            </span>
+                            <span className="label-text">Total</span>
                           </div>
+                          <span className="sr-only">for item {n}:</span>
                           <output className="item-total-value">
                             {/* The array field re-renders only when rows are added or
                                 removed, so read the live row for its total. */}
-                            <form.Subscribe selector={(state) => state.values.items[index]}>
+                            <form.Subscribe key={item.id + "-total-" + index} selector={(state) => state.values.items[index]}>
                               {(row) => amountText(row ? formLineTotal(row) : 0)}
                             </form.Subscribe>
                           </output>
@@ -467,19 +483,24 @@ export function InvoiceForm({
                           id={"delete-" + item.id}
                           type="button"
                           className="item-delete"
-                          onClick={() => {
+                          onClick={async () => {
                             if (saving) return;
                             const rows = itemsField.state.value;
                             const next = rows[index + 1] ?? rows[index - 1];
-                            pendingFocus.current = next ? "delete-" + next.id : "add-item";
-                            itemsField.removeValue(index);
+                            const target = next ? "delete-" + next.id : "add-item";
                             for (const key of ["name", "quantity", "price"]) clearError(base + key);
+                            await itemsField.removeValue(index);
+                            // The clicked button is gone; after the rows re-render,
+                            // move focus to the neighbouring row (or Add New Item).
+                            requestAnimationFrame(() =>
+                              (document.getElementById(target) ?? addRef.current)?.focus(),
+                            );
                           }}
                         >
                           <DeleteIcon />
                           <span className="sr-only">
                             Delete item {n}
-                            <form.Subscribe selector={(state) => state.values.items[index]?.name}>
+                            <form.Subscribe key={item.id + "-label-" + index} selector={(state) => state.values.items[index]?.name}>
                               {(name) => (name ? ": " + name : "")}
                             </form.Subscribe>
                           </span>
@@ -518,6 +539,10 @@ export function InvoiceForm({
               ))}
             </ul>
           )}
+          <SlowHint
+            active={saving !== ""}
+            text="Still saving. Another tab may be using your invoices; this finishes when it lets go."
+          />
           {saveError && (
             <p className="form-alert" role="alert" tabIndex={-1} ref={alertRef}>
               {saveError}

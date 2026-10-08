@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   createContext,
   useContext,
@@ -16,7 +17,7 @@ import {
   writeLibrary,
   type Snapshot,
 } from "../lib/storage.ts";
-import type { Library } from "../lib/invoices.ts";
+import { InvoiceError, type Library } from "../lib/invoices.ts";
 import { SITE_NAME } from "../lib/site.ts";
 import { Dialog } from "./dialog";
 import { LogoIcon, MoonIcon, SunIcon } from "./icons";
@@ -32,7 +33,11 @@ type LibraryContext = {
   ready: boolean;
   busy: boolean;
   commit: (change: (library: Library) => Library) => Promise<Result>;
+  /** A visible confirmation for the page at `path` (after save, paid, delete). */
+  flash: Flash | null;
+  setFlash: (flash: Flash | null) => void;
 };
+export type Flash = { text: string; path: string };
 const Context = createContext<LibraryContext | null>(null);
 const initial: Snapshot = { library: seedLibrary, raw: null };
 
@@ -57,6 +62,14 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const theme = snapshot.library.theme;
+  const [flash, setFlash] = useState<Flash | null>(null);
+  const pathname = usePathname();
+  // A confirmation belongs to one page; leaving that page clears it.
+  const [flashPath, setFlashPath] = useState(pathname);
+  if (flashPath !== pathname) {
+    setFlashPath(pathname);
+    if (flash && flash.path !== pathname) setFlash(null);
+  }
 
   function apply(next: Snapshot) {
     ref.current = next;
@@ -103,16 +116,21 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, []);
   // The inline script in the layout sets the theme before first paint; keep it
   // in step after the saved library loads or the toggle changes it.
+  // Wait for the saved library: before it loads, `theme` is the seed's light
+  // theme and would undo the inline script for a moment.
   useEffect(() => {
+    if (!ready) return;
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
-  }, [theme]);
+  }, [theme, ready]);
 
   async function persist(
     change: (library: Library) => Library,
     recovery: boolean,
   ): Promise<Result> {
-    if (!ready || busyRef.current)
+    if (!ready)
+      return { ok: false, message: "Still opening your invoices. Try again in a moment." };
+    if (busyRef.current)
       return { ok: false, message: "Another save is still in progress. Try again in a moment." };
     if (issue?.kind === "invalid" && !recovery)
       return {
@@ -138,7 +156,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       return {
         ok: false,
-        message: error instanceof Error ? error.message : "Saving failed. Nothing was changed.",
+        // Only domain errors carry plain language; anything else (a schema
+        // failure, say) gets a generic message instead of technical text.
+        message:
+          error instanceof InvoiceError ? error.message : "Saving failed. Nothing was changed.",
       };
     } finally {
       busyRef.current = false;
@@ -153,6 +174,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         ready,
         busy,
         commit: (change) => persist(change, false),
+        flash,
+        setFlash,
       }}
     >
       <div className="app">

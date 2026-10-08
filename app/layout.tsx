@@ -39,6 +39,12 @@ export const metadata: Metadata = {
     },
   },
 };
+const website = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: SITE_NAME,
+  url: SITE_URL,
+};
 const themeScript =
   "try{var t=JSON.parse(localStorage.getItem(" +
   JSON.stringify(STORAGE_KEY) +
@@ -53,6 +59,11 @@ export default function Layout({ children }: { children: ReactNode }) {
         />
       </head>
       <body>
+        <script
+          type="application/ld+json"
+          // Static constant; no user content is serialized here.
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(website) }}
+        />
         <a className="skip-link" href="#main">
           Skip to content
         </a>

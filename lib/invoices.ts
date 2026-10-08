@@ -4,6 +4,9 @@ import { z } from "zod";
 // (integers) so totals never pick up binary floating-point error. Totals and
 // payment due dates are derived, never stored.
 
+/** An error whose message is plain language, safe to show to people. */
+export class InvoiceError extends Error {}
+
 export const STATUSES = ["draft", "pending", "paid"] as const;
 export type Status = (typeof STATUSES)[number];
 export const TERMS = [1, 7, 14, 30] as const;
@@ -246,7 +249,7 @@ export function newInvoiceId(
       pick("0123456789");
     if (!taken.has(id)) return id;
   }
-  throw new Error("Could not create a unique invoice ID.");
+  throw new InvoiceError("Could not create a unique invoice ID.");
 }
 
 // ---------- the form ----------
@@ -397,7 +400,7 @@ export function createInvoice(
   id: string = newInvoiceId(new Set(library.invoices.map((x) => x.id))),
 ): { library: Library; id: string } {
   if (library.invoices.length >= MAX_INVOICES)
-    throw new Error(
+    throw new InvoiceError(
       "This browser already holds " + MAX_INVOICES + " invoices. Delete one before adding another.",
     );
   const invoice = invoiceSchema.parse({ ...fields, id, status });
@@ -406,7 +409,7 @@ export function createInvoice(
 /** Save Changes: a draft becomes pending; pending and paid keep their status. */
 export function updateInvoice(library: Library, id: string, fields: InvoiceFields): Library {
   const current = library.invoices.find((x) => x.id === id);
-  if (!current) throw new Error("This invoice no longer exists in this browser.");
+  if (!current) throw new InvoiceError("This invoice no longer exists in this browser.");
   const status: Status = current.status === "draft" ? "pending" : current.status;
   const next = invoiceSchema.parse({ ...fields, id, status });
   return withInvoices(
@@ -416,10 +419,10 @@ export function updateInvoice(library: Library, id: string, fields: InvoiceField
 }
 export function markPaid(library: Library, id: string): Library {
   const current = library.invoices.find((x) => x.id === id);
-  if (!current) throw new Error("This invoice no longer exists in this browser.");
+  if (!current) throw new InvoiceError("This invoice no longer exists in this browser.");
   if (current.status === "paid") return library;
   if (current.status !== "pending")
-    throw new Error("Only pending invoices can be marked as paid.");
+    throw new InvoiceError("Only pending invoices can be marked as paid.");
   return withInvoices(
     library,
     library.invoices.map((x) => (x.id === id ? { ...x, status: "paid" as const } : x)),
