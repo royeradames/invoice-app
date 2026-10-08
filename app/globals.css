@@ -517,7 +517,7 @@ p {
   visibility: hidden;
 }
 .filter-option:hover .checkbox {
-  border-color: var(--purple);
+  border-color: var(--accent-ink);
 }
 .filter-option input:checked + .checkbox {
   border-color: var(--purple);
