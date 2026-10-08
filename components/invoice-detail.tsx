@@ -1,251 +1,327 @@
 "use client";
-import { useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { FlashMessage } from "./flash-message";
+import { SlowHint } from "./slow-hint";
 import {
-  termsLabel,
+  addressLines,
   displayDate,
-  dueDate,
-  draftTotal,
-  label,
+  invoiceTotal,
+  lineTotal,
   markPaid,
   money,
+  paymentDue,
   removeInvoice,
-  toDraft,
+  type Address,
+  type Invoice,
 } from "../lib/invoices.ts";
 import { Dialog } from "./dialog";
-import { downloadJson, useLibrary } from "./library-provider";
+import { ArrowLeftIcon } from "./icons";
+import { InvoiceForm } from "./invoice-form";
+import { useLibrary } from "./library-provider";
+import { StatusBadge } from "./status-badge";
+
+function GoBack() {
+  return (
+    <Link className="go-back" href="/">
+      <ArrowLeftIcon />
+      Go back
+    </Link>
+  );
+}
+function AddressBlock({ address, className }: { address: Address; className?: string }) {
+  const lines = addressLines(address);
+  return (
+    <p className={"address " + (className ?? "")}>
+      {lines.length
+        ? lines.map((line, i) => (
+            <span key={i} className="address-line">
+              {line}
+            </span>
+          ))
+        : "No address yet"}
+    </p>
+  );
+}
+
 export function InvoiceDetail({ id }: { id: string }) {
-  const { library, ready, busy, commit, reload } = useLibrary();
+  const { library, ready, busy, commit, setFlash } = useLibrary();
+  const path = "/invoices/" + id;
+  const router = useRouter();
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // Busy, not disabled: the control that started a write shows aria-busy and
-  // keeps focus; every action ignores activation while any write is pending.
+  // keeps focus; every action ignores activation while a write is pending.
   const [pending, setPending] = useState<"" | "paid" | "delete">("");
   const lockedRef = useRef(false);
   const statusRef = useRef<HTMLDivElement>(null);
+  const flashRef = useRef<HTMLParagraphElement>(null);
+  // After an edit is saved, the drawer hands focus back to Edit, which on a
+  // phone sits at the foot of the page, far from the confirmation. Move focus
+  // to the confirmation so it scrolls into view and is read out.
+  const [savedTick, setSavedTick] = useState(0);
+  useEffect(() => {
+    if (savedTick) flashRef.current?.focus();
+  }, [savedTick]);
   const invoice = library.invoices.find((x) => x.id === id);
   if (!ready)
     return (
-      <main id="main" className="shell">
-        <h1>Invoice details</h1>
-        <p role="status">Opening local record…</p>
+      <main id="main" className="page detail">
+        <GoBack />
+        <h1 className="sr-only">Invoice #{id}</h1>
+        <p role="status" className="muted">
+          Opening invoice…
+        </p>
+      </main>
+    );
+  if (!invoice && pending === "delete")
+    return (
+      <main id="main" className="page detail">
+        <p role="status" className="muted">
+          Invoice #{id} deleted. Opening your invoices…
+        </p>
       </main>
     );
   if (!invoice)
     return (
-      <main id="main" className="shell">
-        <h1>Invoice not found in this browser</h1>
-        <p>
-          This link does not retrieve another browser or account&apos;s records.
-        </p>
-        <a href="/">Back to invoices</a>
+      <main id="main" className="page detail">
+        <GoBack />
+        <section className="empty">
+          <h1>Invoice #{id} isn&apos;t here</h1>
+          <p>It may have been deleted. Invoices are saved only in this browser.</p>
+        </section>
       </main>
     );
-  const draft = toDraft(invoice);
-  const amount = draftTotal(draft);
-  const due = dueDate(invoice);
   const blocked = () => busy || lockedRef.current;
+  async function paid() {
+    if (blocked()) return;
+    lockedRef.current = true;
+    setPending("paid");
+    const result = await commit((current) => markPaid(current, id));
+    lockedRef.current = false;
+    setPending("");
+    setError(result.ok ? "" : result.message);
+    if (result.ok) setFlash({ text: "Invoice #" + id + " is now paid.", path });
+    // The button leaves with the pending status; keep focus nearby.
+    if (result.ok) statusRef.current?.focus();
+  }
+  const actions = (where: string) => (
+    <div className={"detail-actions " + where}>
+      <button
+        type="button"
+        className="button secondary"
+        onClick={() => {
+          if (blocked()) return;
+          setFlash(null);
+          setEditing(true);
+        }}
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        className="button danger"
+        onClick={() => {
+          if (blocked()) return;
+          setError("");
+          setDeleting(true);
+        }}
+      >
+        Delete
+      </button>
+      {invoice.status === "pending" && (
+        <button
+          type="button"
+          className="button primary"
+          aria-busy={pending === "paid" || undefined}
+          onClick={paid}
+        >
+          {pending === "paid" ? "Marking as paid…" : "Mark as Paid"}
+        </button>
+      )}
+    </div>
+  );
+  const due = paymentDue(invoice);
   return (
-    <main id="main" className="shell">
-      <a className="back" href="/">
-        Back to invoices
-      </a>
-      <header className="status-bar">
+    <main id="main" className="page detail">
+      <GoBack />
+      <section className="status-bar" aria-label="Invoice status and actions">
         <div className="status" ref={statusRef} tabIndex={-1}>
-          <span className="muted">Status</span>
-          <span className={"badge " + invoice.status}>{invoice.status}</span>
+          <span className="status-label">Status</span>
+          <StatusBadge status={invoice.status} />
         </div>
-        <div className="actions detail-actions">
-          {invoice.status !== "paid" && (
-            <a className="button secondary" href={"/invoices/" + id + "/edit"}>
-              Edit invoice
-            </a>
-          )}
-          <button
-            className="danger"
-            onClick={() => {
-              if (blocked()) return;
-              setError("");
-              setDeleting(true);
-            }}
-          >
-            Delete invoice
-          </button>
-          {invoice.status === "pending" && (
-            <button
-              className="primary"
-              aria-busy={pending === "paid" || undefined}
-              onClick={async () => {
-                if (blocked()) return;
-                lockedRef.current = true;
-                setPending("paid");
-                const result = await commit((current) =>
-                  markPaid(current, id, new Date().toISOString().slice(0, 10)),
-                );
-                lockedRef.current = false;
-                setPending("");
-                setError(result.ok ? "" : result.message);
-                // The button leaves with the pending state; keep focus nearby.
-                if (result.ok) statusRef.current?.focus();
-              }}
-            >
-              Mark paid
-            </button>
-          )}
-        </div>
-      </header>
+        {actions("wide-actions")}
+      </section>
+      <FlashMessage path={path} ref={flashRef} />
+      <SlowHint
+        active={pending === "paid"}
+        text="Still saving. Another tab may be using your invoices; this finishes when it lets go."
+      />
       {error && !deleting && (
-        <p role="alert" className="notice">
+        <p role="alert" className="form-alert">
           {error}
         </p>
       )}
-      <article className="paper invoice-paper">
-        <div className="invoice-top">
+      <article className="invoice-sheet" aria-labelledby="invoice-title">
+        <div className="sheet-top">
           <div>
-            <h1 className="invoice-id">{label(invoice)}</h1>
-            <p className="muted">
-              {draft.description || "Description incomplete"}
-            </p>
+            <h1 id="invoice-title" className="sheet-id">
+              <span className="hash">#</span>
+              {invoice.id}
+            </h1>
+            <p className="label">{invoice.description || "No description yet"}</p>
           </div>
-          <p className="address sender muted">
-            {draft.senderAddress || "Address incomplete"}
-          </p>
+          <AddressBlock address={invoice.senderAddress} className="sender" />
         </div>
-        <div className="detail-grid">
-          <section className="dates">
-            <h2>Invoice date</h2>
-            <p className="value">
-              {draft.issueDate ? displayDate(draft.issueDate) : "Incomplete"}
+        <div className="sheet-meta">
+          <div className="meta-dates">
+            <h2 className="label">Invoice Date</h2>
+            <p className="meta-value">
+              {invoice.createdAt ? displayDate(invoice.createdAt) : "Not set"}
             </p>
-            <h2>Payment due</h2>
-            <p className="value">{due ? displayDate(due) : "Incomplete"}</p>
-            <p className="muted">Terms: {termsLabel(draft.terms)}</p>
-            {invoice.status === "paid" && (
-              <p className="muted">
-                Marked paid: {displayDate(invoice.paidOn)} (UTC date)
-              </p>
-            )}
-          </section>
-          <section>
-            <h2>Bill to</h2>
-            <p className="value">{draft.clientName || "Name incomplete"}</p>
-            <p className="address muted">
-              {draft.clientAddress || "Address incomplete"}
-            </p>
-          </section>
-          <section>
-            <h2>Sent to</h2>
-            <p className="value">{draft.clientEmail || "Email incomplete"}</p>
-          </section>
+            <h2 className="label">Payment Due</h2>
+            <p className="meta-value">{due ? displayDate(due) : "Not set"}</p>
+          </div>
+          <div className="meta-bill">
+            <h2 className="label">Bill To</h2>
+            <p className="meta-value">{invoice.clientName || "No client name"}</p>
+            <AddressBlock address={invoice.clientAddress} />
+          </div>
+          <div className="meta-email">
+            <h2 className="label">Sent to</h2>
+            <p className="meta-value break">{invoice.clientEmail || "No email yet"}</p>
+          </div>
         </div>
-        <div className="items">
-          <table>
-            <caption className="sr-only">Synthetic line items — GBP</caption>
+        <div className="sheet-items">
+          <table className="items-table">
+            <caption className="sr-only">Items on invoice #{invoice.id}</caption>
             <thead>
               <tr>
-                <th scope="col">Item name</th>
-                <th scope="col">Qty.</th>
+                <th scope="col">Item Name</th>
+                <th scope="col">QTY.</th>
                 <th scope="col">Price</th>
                 <th scope="col">Total</th>
               </tr>
             </thead>
             <tbody>
-              {draft.items.map((item) => {
-                const line = draftTotal({ ...draft, items: [item] });
-                return (
-                  <tr key={item.id}>
-                    <th scope="row">{item.name || "Unnamed item"}</th>
-                    <td className="qty">{item.quantity || "Incomplete"}</td>
-                    <td className="price">
-                      {item.price ? "£" + item.price : "Incomplete"}
-                    </td>
-                    <td className="line">
-                      {line === null ? "Incomplete" : money(line)}
-                    </td>
-                  </tr>
-                );
-              })}
-              {draft.items.length === 0 && (
+              {invoice.items.map((item) => (
+                <tr key={item.id}>
+                  <th scope="row">{item.name || "Unnamed item"}</th>
+                  <td>{item.quantity ?? "–"}</td>
+                  <td>{item.priceMinor === null ? "–" : money(item.priceMinor)}</td>
+                  <td className="line-total">{money(lineTotal(item))}</td>
+                </tr>
+              ))}
+              {invoice.items.length === 0 && (
                 <tr>
-                  <td colSpan={4}>No line items yet.</td>
+                  <td colSpan={4} className="no-items">
+                    No items yet
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
-          <p className="total amount-due">
-            Amount due{" "}
-            <strong>{amount === null ? "Incomplete" : money(amount)}</strong>
+          <ul className="items-list" aria-label={"Items on invoice #" + invoice.id}>
+            {invoice.items.map((item) => (
+              <li key={item.id}>
+                <span>
+                  <span className="li-name">{item.name || "Unnamed item"}</span>
+                  <span className="li-qty">
+                    {(item.quantity ?? "–") +
+                      " x " +
+                      (item.priceMinor === null ? "–" : money(item.priceMinor))}
+                  </span>
+                </span>
+                <span className="line-total">{money(lineTotal(item))}</span>
+              </li>
+            ))}
+            {invoice.items.length === 0 && <li className="no-items">No items yet</li>}
+          </ul>
+          <p className="amount-due">
+            <span>Amount Due</span>
+            <strong>{money(invoiceTotal(invoice))}</strong>
           </p>
         </div>
       </article>
-      <p className="muted note">
-        No funds were collected. Paid is a local record state. Paid examples
-        cannot be edited or reverted in this foundation.
-      </p>
-      <div className="actions">
-        <button
-          className="secondary"
-          onClick={() => downloadJson(invoice, "synthetic-invoice.json")}
-        >
-          Download local record
-        </button>
-        <button
-          className="secondary"
-          onClick={() => {
-            if (blocked()) return;
-            const result = reload();
-            setError(result.ok ? "" : result.message);
+      {actions("narrow-actions")}
+      {editing && (
+        <InvoiceForm
+          invoice={invoice}
+          onClose={(text) => {
+            setEditing(false);
+            if (text) {
+              setFlash({ text, path });
+              setSavedTick((n) => n + 1);
+            }
           }}
-        >
-          Reload saved data
-        </button>
-      </div>
+        />
+      )}
       {deleting && (
-        <Dialog
-          title={"Delete " + label(invoice) + "?"}
-          busy={busy || pending === "delete"}
+        <DeleteDialog
+          invoice={invoice}
+          pending={pending === "delete"}
           error={error}
-          cancel={() => setDeleting(false)}
-        >
-          <p>
-            Are you sure you want to delete {label(invoice)}? This removes this
-            synthetic record from this browser and cannot be undone. Other
-            invoices are unchanged.
-          </p>
-          <div className="actions dialog-actions">
-            <button
-              autoFocus
-              className="secondary"
-              onClick={() => {
-                if (!blocked()) setDeleting(false);
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              className="danger"
-              aria-busy={pending === "delete" || undefined}
-              onClick={async () => {
-                if (blocked()) return;
-                lockedRef.current = true;
-                setPending("delete");
-                const result = await commit((current) =>
-                  removeInvoice(current, id),
-                );
-                if (result.ok) {
-                  // Stay busy and locked until the list page loads.
-                  window.location.assign("/");
-                  return;
-                }
-                lockedRef.current = false;
-                setPending("");
-                setError(result.message);
-              }}
-            >
-              Confirm deletion
-            </button>
-          </div>
-        </Dialog>
+          cancel={() => {
+            if (!blocked()) setDeleting(false);
+          }}
+          confirm={async () => {
+            if (blocked()) return;
+            lockedRef.current = true;
+            setPending("delete");
+            const result = await commit((current) => removeInvoice(current, id));
+            if (result.ok) {
+              setFlash({ text: "Invoice #" + id + " was deleted.", path: "/" });
+              // Stay busy and locked until the list replaces this page.
+              router.replace("/");
+              return;
+            }
+            lockedRef.current = false;
+            setPending("");
+            setError(result.message);
+          }}
+        />
       )}
     </main>
+  );
+}
+
+function DeleteDialog({
+  invoice,
+  pending,
+  error,
+  cancel,
+  confirm,
+}: {
+  invoice: Invoice;
+  pending: boolean;
+  error: string;
+  cancel: () => void;
+  confirm: () => void;
+}) {
+  return (
+    <Dialog title="Confirm Deletion" busy={pending} error={error} cancel={cancel}>
+      <SlowHint
+        active={pending}
+        text="Still deleting. Another tab may be using your invoices; this finishes when it lets go."
+      />
+      <p className="dialog-text">
+        Are you sure you want to delete invoice #{invoice.id}? This action cannot be undone.
+      </p>
+      <div className="dialog-actions">
+        <button type="button" autoFocus className="button secondary" onClick={cancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="button danger"
+          aria-busy={pending || undefined}
+          onClick={confirm}
+        >
+          {pending ? "Deleting…" : "Delete"}
+        </button>
+      </div>
+    </Dialog>
   );
 }

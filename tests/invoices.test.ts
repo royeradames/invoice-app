@@ -2,25 +2,28 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addDays,
+  createInvoice,
   displayDate,
-  dueDate,
-  draftSchema,
-  draftTotal,
-  emptyDraft,
+  emptyForm,
+  formTotal,
   invoiceSchema,
-  isCalendarDate,
+  invoiceTotal,
   librarySchema,
   markPaid,
   MAX_BYTES,
   money,
-  parseMinor,
+  newInvoiceId,
+  parsePrice,
+  parseQuantity,
+  paymentDue,
   removeInvoice,
-  saveInvoice,
-  totalMinor,
-  toDraft,
-  validatePending,
-  type Draft,
   termsLabel,
+  toForm,
+  updateInvoice,
+  validateForm,
+  visibleInvoices,
+  type FormValues,
+  type Library,
 } from "../lib/invoices.ts";
 import { seedLibrary } from "../lib/fixtures.ts";
 import {
@@ -30,20 +33,25 @@ import {
   type Exclusive,
   type Port,
 } from "../lib/storage.ts";
-const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-const itemId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
 const revA = "11111111-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const revB = "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-function complete(): Draft {
+const itemA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const itemB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+function complete(): FormValues {
+  const address = { street: "84 Church Way", city: "Bradford", postCode: "BD1 9PB", country: "United Kingdom" };
   return {
-    senderAddress: "Synthetic sender",
-    clientName: "Synthetic client",
-    clientEmail: "client@example.com",
-    clientAddress: "Synthetic address",
-    description: "Exact-money exercise",
-    issueDate: "2024-02-28",
-    terms: "1",
-    items: [{ id: itemId, name: "Example", quantity: "3", price: "0.10" }],
+    senderAddress: { street: "19 Union Terrace", city: "London", postCode: "E1 3EZ", country: "United Kingdom" },
+    clientName: "Alex Grim",
+    clientEmail: "alexgrim@mail.com",
+    clientAddress: address,
+    createdAt: "2021-08-21",
+    paymentTerms: "30",
+    description: "Graphic Design",
+    items: [
+      { id: itemA, name: "Banner Design", quantity: "1", price: "156.00" },
+      { id: itemB, name: "Email Design", quantity: "2", price: "200" },
+    ],
   };
 }
 function memory(initial: string | null = null): Port {
@@ -63,181 +71,194 @@ function exclusive(): Exclusive {
     return next;
   };
 }
-test("incomplete drafts persist but cannot become pending or paid", () => {
-  const draft = saveInvoice(seedLibrary, id, emptyDraft(), "draft", 1);
-  assert.equal(draft.invoices.find((x) => x.id === id)?.status, "draft");
-  assert.throws(() => saveInvoice(draft, id, emptyDraft(), "pending", 2));
-  assert.throws(() => markPaid(draft, id, "2026-10-07"));
-  assert.equal(draft.invoices.length, 4);
+function fields(values: FormValues, intent: "draft" | "send" = "send") {
+  const result = validateForm(values, intent);
+  assert.ok(result.ok, JSON.stringify(!result.ok && result.errors));
+  return result.fields;
+}
+
+test("seed is the brief's data.json: 7 invoices, its totals and its due dates", () => {
+  const expected = [
+    ["RT3080", "paid", "2021-08-19", 180090],
+    ["XM9141", "pending", "2021-09-20", 55600],
+    ["RG0314", "paid", "2021-10-01", 1400233],
+    ["RT2080", "pending", "2021-10-12", 10204],
+    ["AA1449", "pending", "2021-10-14", 403233],
+    ["TY9141", "pending", "2021-10-31", 615591],
+    ["FV2353", "draft", "2021-11-12", 310204],
+  ] as const;
+  assert.deepEqual(
+    seedLibrary.invoices.map((x) => [x.id, x.status, paymentDue(x), invoiceTotal(x)]),
+    expected,
+  );
+  assert.equal(money(invoiceTotal(seedLibrary.invoices[2])), "£ 14,002.33");
+  assert.deepEqual(seedLibrary.filter, []);
 });
-test("draft to pending to paid is explicit; repeated paid is idempotent and edits/reversion fail", () => {
-  const draft = saveInvoice(seedLibrary, id, complete(), "draft", 1);
-  const pending = saveInvoice(draft, id, complete(), "pending", 2);
-  assert.throws(() => saveInvoice(pending, id, complete(), "draft", 3));
-  const paid = markPaid(pending, id, "2024-02-29");
-  assert.equal(paid.invoices.find((x) => x.id === id)?.status, "paid");
-  assert.equal(markPaid(paid, id, "2024-03-01"), paid);
-  assert.throws(() => saveInvoice(paid, id, complete(), "pending", 3));
-  assert.equal(seedLibrary.invoices.length, 3);
+
+test("new IDs are two uppercase letters and four digits, never reusing one", () => {
+  for (let i = 0; i < 200; i++) assert.match(newInvoiceId(new Set()), /^[A-Z]{2}\d{4}$/);
+  // A random source that first returns a taken ID, then a free one.
+  const values = [0, 0, 0, 0, 0, 0, 0.99, 0, 0, 0, 0, 0];
+  let i = 0;
+  assert.equal(newInvoiceId(new Set(["AA0000"]), () => values[i++]), "ZA0000");
 });
-test("minor units have independently known exact fractional totals", () => {
-  assert.equal(parseMinor("0.10"), 10);
-  assert.equal(parseMinor("0.2"), 20);
-  assert.equal(parseMinor("999999.99"), 99_999_999);
-  for (const bad of [
-    "-1",
-    "1e3",
-    "1.001",
-    "1000000.00",
-    "NaN",
-    "",
-    ".1",
-    " 1",
-    "1,00",
+
+test("Save & Send requires every field and an item; errors name each field", () => {
+  const blank = validateForm(emptyForm(""), "send");
+  assert.equal(blank.ok, false);
+  if (blank.ok) return;
+  for (const path of [
+    "senderAddress.street",
+    "senderAddress.city",
+    "senderAddress.postCode",
+    "senderAddress.country",
+    "clientName",
+    "clientEmail",
+    "clientAddress.street",
+    "clientAddress.city",
+    "clientAddress.postCode",
+    "clientAddress.country",
+    "createdAt",
+    "description",
+    "items",
   ])
-    assert.equal(parseMinor(bad), null);
-  const input = complete();
-  input.items.push({
-    id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-    name: "Second",
-    quantity: "1",
-    price: "0.20",
-  });
-  const valid = validatePending(input);
-  assert.equal(valid.kind, "valid");
-  if (valid.kind === "valid") assert.equal(totalMinor(valid.details), 50);
-  assert.equal(money(30), "£0.30");
-  assert.equal(money(123456), "£1,234.56");
-  assert.equal(draftTotal(emptyDraft()), null);
+    assert.ok(blank.errors[path], path);
+  assert.equal(blank.errors.clientName, "can't be empty");
+  assert.deepEqual(blank.summary, ["All fields must be added", "An item must be added"]);
+  const values = complete();
+  values.items.push({ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "", quantity: "", price: "" });
+  const partialItem = validateForm(values, "send");
+  assert.equal(partialItem.ok, false);
+  if (!partialItem.ok)
+    assert.deepEqual(Object.keys(partialItem.errors).sort(), [
+      "items.cccccccc-cccc-4ccc-8ccc-cccccccccccc.name",
+      "items.cccccccc-cccc-4ccc-8ccc-cccccccccccc.price",
+      "items.cccccccc-cccc-4ccc-8ccc-cccccccccccc.quantity",
+    ]);
 });
-test("item errors have stable identity and explicit quantity/price bounds", () => {
-  const input = complete();
-  input.items[0] = { id: itemId, name: "", quantity: "10000", price: "1.234" };
-  const invalid = validatePending(input);
-  assert.equal(invalid.kind, "invalid");
-  if (invalid.kind === "invalid") {
-    assert.ok(invalid.errors[itemId + ".name"]);
-    assert.ok(invalid.errors[itemId + ".quantity"]);
-    assert.ok(invalid.errors[itemId + ".price"]);
-  }
-  input.items[0] = {
-    id: itemId,
-    name: "Max",
-    quantity: "9999",
-    price: "999999.99",
-  };
-  const valid = validatePending(input);
-  assert.equal(valid.kind, "valid");
-  if (valid.kind === "valid")
-    assert.equal(totalMinor(valid.details), 999_899_990_001);
+
+test("Save as Draft accepts blanks but still rejects what is typed wrong", () => {
+  const blank = validateForm(emptyForm(""), "draft");
+  assert.equal(blank.ok, true);
+  const values = emptyForm("2021-08-21");
+  values.clientEmail = "not-an-email";
+  values.items = [{ id: itemA, name: "", quantity: "1.5", price: "12.345" }];
+  const bad = validateForm(values, "draft");
+  assert.equal(bad.ok, false);
+  if (bad.ok) return;
+  assert.deepEqual(Object.keys(bad.errors).sort(), [
+    "clientEmail",
+    `items.${itemA}.price`,
+    `items.${itemA}.quantity`,
+  ]);
+  assert.equal(bad.errors.clientEmail, "invalid email");
+  assert.equal(bad.summary.includes("All fields must be added"), false);
 });
-test("calendar arithmetic preserves leap/year boundaries in UTC and AST", () => {
-  assert.equal(isCalendarDate("2024-02-29"), true);
-  for (const text of [
-    "2023-02-29",
-    "2024-04-31",
-    "2024-00-01",
-    "24-01-01",
-    "1899-12-31",
-    "9999-01-01",
-  ])
-    assert.equal(isCalendarDate(text), false);
-  for (const tz of ["UTC", "America/Santo_Domingo"]) {
-    const previous = process.env.TZ;
-    try {
-      process.env.TZ = tz;
-      assert.equal(addDays("2024-02-28", 1), "2024-02-29");
-      assert.equal(addDays("2024-12-31", 1), "2025-01-01");
-      assert.equal(addDays("2024-02-29", 30), "2024-03-30");
-    } finally {
-      if (previous === undefined) delete process.env.TZ;
-      else process.env.TZ = previous;
-    }
-  }
-});
-test("deleting one identity never modifies another record or reuses its ID", () => {
-  const original = structuredClone(seedLibrary);
-  const removed = removeInvoice(
-    seedLibrary,
-    "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-  );
-  const next = saveInvoice(removed, id, complete(), "draft", 1);
-  assert.equal(next.invoices.length, 3);
-  assert.equal(new Set(next.invoices.map((x) => x.id)).size, 3);
-  assert.deepEqual(next.invoices[0], original.invoices[0]);
-  assert.deepEqual(seedLibrary, original);
-});
-test("saved schemas reject duplicate IDs, extra fields, oversized text and invalid states", () => {
+
+test("drafts save partially; Save Changes makes a draft pending; pending becomes paid once", () => {
+  const draftValues = emptyForm("2021-08-21");
+  draftValues.clientName = "Partial client";
+  const created = createInvoice(seedLibrary, fields(draftValues, "draft"), "draft", "AB1234");
+  const draft = created.library.invoices.find((x) => x.id === "AB1234");
+  assert.equal(draft?.status, "draft");
+  assert.equal(created.library.invoices.length, 8);
+  assert.throws(() => markPaid(created.library, "AB1234"));
+  // Storage refuses an incomplete pending record even if a caller skips validation.
+  assert.throws(() => updateInvoice(created.library, "AB1234", fields(draftValues, "draft")));
+  const pending = updateInvoice(created.library, "AB1234", fields(complete()));
+  assert.equal(pending.invoices.find((x) => x.id === "AB1234")?.status, "pending");
+  const paid = markPaid(pending, "AB1234");
+  assert.equal(paid.invoices.find((x) => x.id === "AB1234")?.status, "paid");
+  assert.equal(markPaid(paid, "AB1234"), paid);
+  // Editing a paid invoice keeps it paid.
   assert.equal(
-    librarySchema.safeParse({
-      ...seedLibrary,
-      invoices: [...seedLibrary.invoices, seedLibrary.invoices[0]],
-    }).success,
+    updateInvoice(paid, "AB1234", fields(complete())).invoices.find((x) => x.id === "AB1234")?.status,
+    "paid",
+  );
+  // Other records are untouched throughout.
+  assert.deepEqual(paid.invoices.slice(0, 7), seedLibrary.invoices);
+});
+
+test("payment due is the invoice date plus the terms, across month, leap and year ends", () => {
+  assert.equal(addDays("2024-02-28", 1), "2024-02-29");
+  assert.equal(addDays("2023-02-28", 1), "2023-03-01");
+  assert.equal(addDays("2021-12-25", 7), "2022-01-01");
+  assert.equal(paymentDue({ createdAt: "2021-08-21", paymentTerms: 30 }), "2021-09-20");
+  assert.equal(paymentDue({ createdAt: "", paymentTerms: 30 }), null);
+  assert.equal(displayDate("2021-10-01"), "01 Oct 2021");
+  assert.equal(termsLabel(1), "Net 1 Day");
+  assert.equal(termsLabel(30), "Net 30 Days");
+});
+
+test("line items total exactly in pence, including after adding and removing items", () => {
+  assert.equal(parsePrice("0.1"), 10);
+  assert.equal(parsePrice("1,800.90"), 180090);
+  assert.equal(parsePrice("12.345"), null);
+  assert.equal(parsePrice("-1"), null);
+  assert.equal(parseQuantity("0"), null);
+  assert.equal(parseQuantity("10000"), null);
+  const values = complete();
+  assert.equal(formTotal(values), 55600);
+  values.items.push({ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "x", quantity: "3", price: "0.10" });
+  assert.equal(formTotal(values), 55630);
+  values.items = values.items.filter((x) => x.id !== itemB);
+  assert.equal(formTotal(values), 15630);
+  // A blank or invalid row counts as zero until it is fixed.
+  values.items.push({ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "", quantity: "", price: "" });
+  assert.equal(formTotal(values), 15630);
+});
+
+test("form round trip keeps every field, item ID and price", () => {
+  const created = createInvoice(seedLibrary, fields(complete()), "pending", "ZZ0001");
+  const saved = created.library.invoices.find((x) => x.id === "ZZ0001")!;
+  const back = toForm(saved);
+  assert.deepEqual(back, { ...complete(), items: complete().items.map((x) => ({ ...x, price: x.id === itemB ? "200.00" : x.price })) });
+});
+
+test("delete removes only the chosen invoice; filters show any mix of statuses", () => {
+  const next = removeInvoice(seedLibrary, "XM9141");
+  assert.deepEqual(
+    next.invoices.map((x) => x.id),
+    seedLibrary.invoices.map((x) => x.id).filter((x) => x !== "XM9141"),
+  );
+  const filtered = (filter: Library["filter"]) =>
+    visibleInvoices({ ...seedLibrary, filter }).map((x) => x.id);
+  assert.deepEqual(filtered([]).length, 7);
+  assert.deepEqual(filtered(["draft"]), ["FV2353"]);
+  assert.deepEqual(filtered(["paid", "draft"]), ["RT3080", "RG0314", "FV2353"]);
+});
+
+test("stored schema rejects bad IDs, extra fields and incomplete pending records", () => {
+  const good = seedLibrary.invoices[1];
+  assert.equal(invoiceSchema.safeParse(good).success, true);
+  assert.equal(invoiceSchema.safeParse({ ...good, id: "xm9141" }).success, false);
+  assert.equal(invoiceSchema.safeParse({ ...good, extra: 1 }).success, false);
+  assert.equal(invoiceSchema.safeParse({ ...good, clientName: "" }).success, false);
+  assert.equal(invoiceSchema.safeParse({ ...good, status: "draft", clientName: "" }).success, true);
+  assert.equal(
+    librarySchema.safeParse({ ...seedLibrary, invoices: [good, good] }).success,
     false,
   );
-  const draft = complete();
-  const line = draft.items[0];
-  assert.ok(line);
-  draft.items.push(structuredClone(line));
-  assert.equal(draftSchema.safeParse(draft).success, false);
-  assert.equal(
-    draftSchema.safeParse({ ...complete(), clientName: "x".repeat(101) })
-      .success,
-    false,
-  );
-  const first = seedLibrary.invoices[0];
-  assert.ok(first);
-  assert.equal(
-    invoiceSchema.safeParse({ ...first, status: "paid" }).success,
-    false,
-  );
-  assert.equal(
-    librarySchema.safeParse({ ...seedLibrary, version: 2 }).success,
-    false,
-  );
-  assert.equal(
-    librarySchema.safeParse({ ...seedLibrary, extra: "fictional" }).success,
-    false,
-  );
 });
-test("saved form conversion retains every field, line ID and exact price", () => {
-  const next = saveInvoice(seedLibrary, id, complete(), "pending", 1);
-  const record = next.invoices.find((x) => x.id === id);
-  assert.ok(record);
-  assert.deepEqual(toDraft(record), complete());
-});
-test("parallel saves serialize and a stale preference/deletion cannot overwrite newer data", async () => {
+
+test("parallel saves serialize and a stale write cannot overwrite newer data", async () => {
   const port = memory();
   const lock = exclusive();
   const [first, stale] = await Promise.all([
-    writeLibrary(
-      port,
-      lock,
-      null,
-      saveInvoice(seedLibrary, id, complete(), "draft", 1),
-      revA,
-    ),
-    writeLibrary(
-      port,
-      lock,
-      null,
-      {
-        ...removeInvoice(seedLibrary, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
-        theme: "dark",
-      },
-      revB,
-    ),
+    writeLibrary(port, lock, null, removeInvoice(seedLibrary, "RT3080"), revA),
+    writeLibrary(port, lock, null, { ...seedLibrary, theme: "dark" }, revB),
   ]);
   assert.equal(first.kind, "saved");
   assert.equal(stale.kind, "failed");
   const read = readLibrary(port, seedLibrary);
   assert.equal(read.kind, "loaded");
   if (read.kind === "loaded") {
-    assert.equal(read.snapshot.library.invoices.length, 4);
+    assert.equal(read.snapshot.library.invoices.length, 6);
     assert.equal(read.snapshot.library.theme, "light");
   }
 });
-test("corruption, over-limit bytes, denied/quota storage and absent locks preserve prior bytes", async () => {
+
+test("corrupt, oversized, denied and lock-less storage keep the saved bytes", async () => {
   for (const raw of ["{broken", "x".repeat(MAX_BYTES + 1)]) {
     const port = memory(raw);
     assert.equal(readLibrary(port, seedLibrary).kind, "invalid");
@@ -250,15 +271,8 @@ test("corruption, over-limit bytes, denied/quota storage and absent locks preser
       throw new Error("quota");
     },
   };
-  assert.equal(
-    (await writeLibrary(quota, exclusive(), before, seedLibrary, revA)).kind,
-    "failed",
-  );
-  assert.equal(quota.getItem(STORAGE_KEY), before);
-  assert.equal(
-    (await writeLibrary(memory(before), null, before, seedLibrary, revA)).kind,
-    "failed",
-  );
+  assert.equal((await writeLibrary(quota, exclusive(), before, seedLibrary, revA)).kind, "failed");
+  assert.equal((await writeLibrary(memory(before), null, before, seedLibrary, revA)).kind, "failed");
   assert.equal(
     readLibrary(
       {
@@ -270,71 +284,5 @@ test("corruption, over-limit bytes, denied/quota storage and absent locks preser
       seedLibrary,
     ).kind,
     "unavailable",
-  );
-});
-test("collection and item boundaries are independent from the UTF-8 byte limit", async () => {
-  const uuid = (n: number) =>
-    n.toString(16).padStart(8, "0") + "-dddd-4ddd-8ddd-dddddddddddd";
-  const draft = complete();
-  const first = draft.items[0];
-  assert.ok(first);
-  draft.items = Array.from({ length: 50 }, (_, index) => ({
-    ...first,
-    id: uuid(index + 1),
-    name: "界".repeat(100),
-  }));
-  draft.senderAddress = "界".repeat(400);
-  draft.clientAddress = "界".repeat(400);
-  assert.equal(draftSchema.safeParse(draft).success, true);
-  assert.equal(
-    draftSchema.safeParse({
-      ...draft,
-      items: [...draft.items, { ...first, id: uuid(51) }],
-    }).success,
-    false,
-  );
-  const base = seedLibrary.invoices[0];
-  assert.ok(base && base.status === "draft");
-  const full = {
-    ...seedLibrary,
-    invoices: Array.from({ length: 100 }, (_, index) => ({
-      ...base,
-      id: uuid(index + 1),
-      draft,
-    })),
-  };
-  assert.equal(librarySchema.safeParse(full).success, true);
-  assert.equal(
-    librarySchema.safeParse({
-      ...full,
-      invoices: [...full.invoices, { ...base, id: uuid(101) }],
-    }).success,
-    false,
-  );
-  assert.ok(new TextEncoder().encode(JSON.stringify(full)).length > MAX_BYTES);
-  const unchanged = JSON.stringify(seedLibrary);
-  const port = memory(unchanged);
-  assert.equal(
-    (await writeLibrary(port, exclusive(), unchanged, full, revA)).kind,
-    "failed",
-  );
-  assert.equal(port.getItem(STORAGE_KEY), unchanged);
-});
-
-test("payment terms read naturally for one day and many days", () => {
-  assert.equal(termsLabel("1"), "1 day");
-  assert.equal(termsLabel("30"), "30 days");
-});
-
-test("list dates use the design format and drafts derive due from terms", () => {
-  assert.equal(displayDate("2026-10-07"), "07 Oct 2026");
-  assert.equal(displayDate("incomplete"), "incomplete");
-  const [draft, pending, paid] = seedLibrary.invoices;
-  assert.equal(dueDate(draft!), "2026-11-06");
-  assert.equal(dueDate(pending!), "2026-10-08");
-  assert.equal(dueDate(paid!), "2026-10-09");
-  assert.equal(
-    dueDate({ ...draft!, draft: { ...complete(), issueDate: "" } } as never),
-    null,
   );
 });

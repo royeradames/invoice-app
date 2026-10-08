@@ -1,5 +1,7 @@
 import { librarySchema, MAX_BYTES, type Library } from "./invoices.ts";
-export const STORAGE_KEY = "invoice-synthetic-demo-v1";
+// v2 follows the official data shape (split addresses, AA0000 IDs). v1 data is
+// left untouched under its own key; it is not migrated.
+export const STORAGE_KEY = "invoice-app-v2";
 export type Snapshot = { library: Library; raw: string | null };
 export type ReadResult =
   | { kind: "loaded"; snapshot: Snapshot }
@@ -19,7 +21,7 @@ export function readLibrary(port: Port, fallback: Library): ReadResult {
     return {
       kind: "unavailable",
       message:
-        "Storage is unavailable. Keep this tab open and download your draft before leaving.",
+        "This browser is blocking storage, so changes can't be saved here.",
     };
   }
   if (raw === null)
@@ -36,7 +38,7 @@ export function readLibrary(port: Port, fallback: Library): ReadResult {
       kind: "invalid",
       raw,
       message:
-        "Saved data is unreadable. It has not been replaced. Download its backup before resetting.",
+        "Your saved invoices couldn't be read. They haven't been replaced. Download a backup before you reset them.",
     };
   }
 }
@@ -51,7 +53,7 @@ export async function writeLibrary(
     return {
       kind: "failed",
       message:
-        "This browser cannot coordinate safe cross-tab saves. Your draft remains available to download.",
+        "This browser can't save safely across tabs, so nothing was saved. Your changes are still on screen.",
     };
   try {
     const next = librarySchema.parse({ ...library, revision });
@@ -60,14 +62,14 @@ export async function writeLibrary(
       return {
         kind: "failed",
         message:
-          "The saved library would exceed 2 MB. Download this draft and remove older records first.",
+          "Saving would go over the 2 MB limit. Delete an older invoice first.",
       };
     return await exclusive(() => {
       if (port.getItem(STORAGE_KEY) !== expected)
         return {
           kind: "failed",
           message:
-            "Another tab changed this library. Your draft is intact. Download it or explicitly reload saved data.",
+            "Another tab changed your invoices, so nothing was saved. Your changes are still on screen. Reload saved invoices, then try again.",
         };
       port.setItem(STORAGE_KEY, raw);
       return { kind: "saved", snapshot: { library: next, raw } };
@@ -76,12 +78,12 @@ export async function writeLibrary(
     return {
       kind: "failed",
       message:
-        "Saving failed or storage is full. Saved data and your current draft remain unchanged.",
+        "Saving failed, possibly because storage is full. Nothing was changed.",
     };
   }
 }
 export function browserExclusive(): Exclusive | null {
   return navigator.locks
-    ? (work) => navigator.locks.request("invoice-synthetic-demo-write", work)
+    ? (work) => navigator.locks.request("invoice-app-v2-write", work)
     : null;
 }

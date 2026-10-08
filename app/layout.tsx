@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import { LibraryProvider } from "../components/library-provider";
+import { STORAGE_KEY } from "../lib/storage.ts";
 import { SITE_NAME, SITE_URL } from "../lib/site.ts";
 import "./globals.css";
 
@@ -21,7 +22,7 @@ export const metadata: Metadata = {
     template: "%s | " + SITE_NAME,
   },
   description:
-    "Practice invoice draft, pending and paid workflows with fictional GBP records saved in this browser.",
+    "Create, edit, filter and mark invoices as paid. Drafts and invoices are saved in this browser only.",
   openGraph: { siteName: SITE_NAME, type: "website" },
   robots: { index: false, follow: false },
   icons: {
@@ -38,18 +39,39 @@ export const metadata: Metadata = {
     },
   },
 };
+const website = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: SITE_NAME,
+  url: SITE_URL,
+};
+const themeScript =
+  "try{var t=JSON.parse(localStorage.getItem(" +
+  JSON.stringify(STORAGE_KEY) +
+  ")||'{}').theme;if(t==='dark'){document.documentElement.dataset.theme='dark';document.documentElement.style.colorScheme='dark'}}catch(e){}";
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={spartan.variable}>
+    <html lang="en" className={spartan.variable} suppressHydrationWarning>
+      <head>
+        <script
+          // Apply the saved theme before first paint so dark mode never flashes light.
+          dangerouslySetInnerHTML={{ __html: themeScript }}
+        />
+      </head>
       <body>
+        <script
+          type="application/ld+json"
+          // Static constant; no user content is serialized here.
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(website) }}
+        />
         <a className="skip-link" href="#main">
           Skip to content
         </a>
         <LibraryProvider>{children}</LibraryProvider>
         <noscript>
           <p className="noscript">
-            JavaScript is needed for this browser-local invoice demo. No
-            accounts, payments or messages are processed.
+            This invoice app needs JavaScript. Invoices are saved in this
+            browser only; nothing is sent or charged.
           </p>
         </noscript>
       </body>

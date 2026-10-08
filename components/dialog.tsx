@@ -1,5 +1,32 @@
 "use client";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+
+/** Keep Tab inside a modal; a native modal still lets Tab reach the browser chrome. */
+export function trapTab(event: KeyboardEvent<HTMLElement>) {
+  if (event.key !== "Tab") return;
+  const focusable = [
+    ...event.currentTarget.querySelectorAll<HTMLElement>(
+      "button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex='-1'])",
+    ),
+  ].filter((el) => el.offsetParent !== null || el === document.activeElement);
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+  if (
+    event.shiftKey
+      ? active === first || !focusable.includes(active as HTMLElement)
+      : active === last
+  ) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  }
+}
+
+/** Centered confirmation modal (delete, reset). */
 export function Dialog({
   title,
   error = "",
@@ -15,6 +42,7 @@ export function Dialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const titleId = useId();
   useEffect(() => {
     const dialog = ref.current;
     const opener = document.activeElement;
@@ -30,43 +58,29 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      aria-labelledby="dialog-title"
+      className="modal"
+      aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) cancel();
       }}
-      onKeyDown={(event) => {
-        // A native modal still lets Tab leave for the browser chrome; keep it inside.
-        if (event.key !== "Tab") return;
-        const focusable = [
-          ...event.currentTarget.querySelectorAll<HTMLElement>(
-            "button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex='-1'])",
-          ),
-        ];
-        if (focusable.length === 0) {
-          event.preventDefault();
-          return;
-        }
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        const active = document.activeElement;
-        if (
-          event.shiftKey
-            ? active === first || !focusable.includes(active as HTMLElement)
-            : active === last
-        ) {
-          event.preventDefault();
-          (event.shiftKey ? last : first).focus();
-        }
+      onClick={(event) => {
+        // A click on the backdrop lands on the dialog element itself.
+        if (event.target === event.currentTarget && !busy) cancel();
       }}
+      onKeyDown={trapTab}
     >
-      <h2 id="dialog-title">{title}</h2>
+      <div className="modal-body">
+      <h2 id={titleId} className="modal-title">
+        {title}
+      </h2>
       {error && (
-        <p role="alert" tabIndex={-1} ref={errorRef} className="notice">
+        <p role="alert" tabIndex={-1} ref={errorRef} className="form-alert">
           {error}
         </p>
       )}
       {children}
+      </div>
     </dialog>
   );
 }

@@ -1,13 +1,28 @@
 import { z } from "zod";
 
-export const MAX_INVOICES = 100;
+// Domain for the Frontend Mentor invoice brief. Money is kept in pence
+// (integers) so totals never pick up binary floating-point error. Totals and
+// payment due dates are derived, never stored.
+
+/** An error whose message is plain language, safe to show to people. */
+export class InvoiceError extends Error {}
+
+export const STATUSES = ["draft", "pending", "paid"] as const;
+export type Status = (typeof STATUSES)[number];
+export const TERMS = [1, 7, 14, 30] as const;
+export type Terms = (typeof TERMS)[number];
+export const MAX_INVOICES = 200;
 export const MAX_ITEMS = 50;
-export const MAX_PRICE = 99_999_999;
+export const MAX_QUANTITY = 9999;
+export const MAX_PRICE_MINOR = 99_999_999; // £999,999.99
 export const MAX_BYTES = 2_000_000;
-export const idSchema = z.uuid();
-export const filterSchema = z.enum(["all", "draft", "pending", "paid"]);
+
+export const invoiceIdSchema = z.string().regex(/^[A-Z]{2}\d{4}$/);
+export const statusSchema = z.enum(STATUSES);
+export const filterSchema = z.array(statusSchema).max(3);
 export type Filter = z.infer<typeof filterSchema>;
 
+// ---------- dates ----------
 export function isCalendarDate(text: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
   const [year, month, day] = text.split("-").map(Number);
@@ -20,114 +35,130 @@ export function isCalendarDate(text: string): boolean {
   );
 }
 export function addDays(date: string, days: number): string {
-  if (!isCalendarDate(date) || ![1, 7, 14, 30].includes(days))
-    throw new Error("Invalid invoice date or terms.");
+  if (!isCalendarDate(date)) throw new Error("Invalid invoice date.");
   const value = new Date(date + "T00:00:00.000Z");
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
 }
-export function parseMinor(text: string): number | null {
-  if (!/^\d{1,6}(?:\.\d{1,2})?$/.test(text)) return null;
-  const [whole = "", fraction = ""] = text.split(".");
-  const value = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
-  return Number.isSafeInteger(value) && value <= MAX_PRICE ? value : null;
+export function isoDate(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate())
+  );
 }
+export const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+// Design format "01 Oct 2021", built by hand so it never depends on locale.
+export function displayDate(date: string): string {
+  if (!isCalendarDate(date)) return date;
+  const [year, month, day] = date.split("-");
+  return day + " " + MONTHS[Number(month) - 1] + " " + year;
+}
+
+// ---------- money ----------
+// Accepts "156", "156.5", "156.50" and an optional thousands comma.
+export function parsePrice(text: string): number | null {
+  const clean = text.trim().replace(/,/g, "");
+  if (!/^\d{1,6}(?:\.\d{1,2})?$/.test(clean)) return null;
+  const [whole = "", fraction = ""] = clean.split(".");
+  const value = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  return Number.isSafeInteger(value) && value <= MAX_PRICE_MINOR ? value : null;
+}
+export function parseQuantity(text: string): number | null {
+  const clean = text.trim();
+  if (!/^\d{1,4}$/.test(clean)) return null;
+  const value = Number(clean);
+  return value >= 1 && value <= MAX_QUANTITY ? value : null;
+}
+function grouped(minor: number): string {
+  if (!Number.isSafeInteger(minor) || minor < 0) throw new Error("Invalid money.");
+  const whole = String(Math.floor(minor / 100)).replace(
+    /\B(?=(\d{3})+(?!\d))/g,
+    ",",
+  );
+  return whole + "." + String(minor % 100).padStart(2, "0");
+}
+/** "156.00" for form inputs. */
 export function priceText(minor: number): string {
-  if (!Number.isSafeInteger(minor) || minor < 0)
-    throw new Error("Invalid money.");
+  if (!Number.isSafeInteger(minor) || minor < 0) throw new Error("Invalid money.");
   return Math.floor(minor / 100) + "." + String(minor % 100).padStart(2, "0");
 }
-export function money(minor: number): string {
-  const exact = priceText(minor);
-  const [whole = "", cents = ""] = exact.split(".");
-  return "£" + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + cents;
+/** "1,800.90" for the form's read-only line totals. */
+export function amountText(minor: number): string {
+  return grouped(minor);
 }
-const text = z.string().max(400, "Use at most 400 characters.");
-export const itemDraftSchema = z
+/** "£ 1,800.90" as in the design, with a no-break space. */
+export function money(minor: number): string {
+  return "£ " + grouped(minor);
+}
+
+// ---------- stored records ----------
+const text = (max: number) => z.string().max(max);
+export const addressSchema = z
   .object({
-    id: idSchema,
-    name: z.string().max(100),
-    quantity: z.string().max(10),
-    price: z.string().max(16),
+    street: text(100),
+    city: text(60),
+    postCode: text(20),
+    country: text(60),
   })
   .strict();
-export const draftSchema = z
+export type Address = z.infer<typeof addressSchema>;
+export const itemSchema = z
   .object({
-    senderAddress: text,
-    clientName: z.string().max(100),
-    clientEmail: z.string().max(254),
-    clientAddress: text,
-    description: z.string().max(200),
-    issueDate: z.string().max(10),
-    terms: z.enum(["1", "7", "14", "30"]),
-    items: z.array(itemDraftSchema).max(MAX_ITEMS),
-  })
-  .strict()
-  .superRefine((v, ctx) => {
-    if (new Set(v.items.map((x) => x.id)).size !== v.items.length)
-      ctx.addIssue({
-        code: "custom",
-        path: ["items"],
-        message: "Line item IDs must be unique.",
-      });
-  });
-export type Draft = z.infer<typeof draftSchema>;
-const itemSchema = z
-  .object({
-    id: idSchema,
-    name: z.string().trim().min(1).max(100),
-    quantity: z.number().int().min(1).max(9999),
-    unitMinor: z.number().int().min(0).max(MAX_PRICE),
+    id: z.uuid(),
+    name: text(100),
+    quantity: z.number().int().min(1).max(MAX_QUANTITY).nullable(),
+    priceMinor: z.number().int().min(0).max(MAX_PRICE_MINOR).nullable(),
   })
   .strict();
-const detailsSchema = z
-  .object({
-    senderAddress: text.trim().min(1),
-    clientName: z.string().trim().min(1).max(100),
-    clientEmail: z.email().max(254),
-    clientAddress: text.trim().min(1),
-    description: z.string().trim().min(1).max(200),
-    issueDate: z.string().refine(isCalendarDate),
-    terms: z.union([z.literal(1), z.literal(7), z.literal(14), z.literal(30)]),
-    items: z.array(itemSchema).min(1).max(MAX_ITEMS),
-  })
-  .strict()
-  .superRefine((v, ctx) => {
-    if (new Set(v.items.map((x) => x.id)).size !== v.items.length)
-      ctx.addIssue({
-        code: "custom",
-        path: ["items"],
-        message: "Line item IDs must be unique.",
-      });
-  });
-export type Details = z.infer<typeof detailsSchema>;
-const base = {
-  id: idSchema,
-  createdAt: z.number().int().nonnegative(),
-  updatedAt: z.number().int().nonnegative(),
-  currency: z.literal("GBP"),
-};
-export const invoiceSchema = z.discriminatedUnion("status", [
-  z
-    .object({ ...base, status: z.literal("draft"), draft: draftSchema })
-    .strict(),
-  z
-    .object({ ...base, status: z.literal("pending"), details: detailsSchema })
-    .strict(),
-  z
-    .object({
-      ...base,
-      status: z.literal("paid"),
-      details: detailsSchema,
-      paidOn: z.string().refine(isCalendarDate),
-    })
-    .strict(),
+export type Item = z.infer<typeof itemSchema>;
+const termsSchema = z.union([
+  z.literal(1),
+  z.literal(7),
+  z.literal(14),
+  z.literal(30),
 ]);
+export const invoiceSchema = z
+  .object({
+    id: invoiceIdSchema,
+    status: statusSchema,
+    createdAt: z.string().max(10),
+    paymentTerms: termsSchema,
+    description: text(200),
+    clientName: text(100),
+    clientEmail: text(254),
+    senderAddress: addressSchema,
+    clientAddress: addressSchema,
+    items: z.array(itemSchema).max(MAX_ITEMS),
+  })
+  .strict()
+  .superRefine((invoice, ctx) => {
+    // Drafts may be partial; pending and paid must be complete.
+    const problems = issues(invoice, invoice.status === "draft" ? "draft" : "send");
+    if (problems.length)
+      ctx.addIssue({ code: "custom", message: problems.join(" ") });
+    if (new Set(invoice.items.map((x) => x.id)).size !== invoice.items.length)
+      ctx.addIssue({ code: "custom", message: "Line item IDs must be unique." });
+  });
 export type Invoice = z.infer<typeof invoiceSchema>;
+export type InvoiceFields = Omit<Invoice, "id" | "status">;
+
 export const librarySchema = z
   .object({
-    version: z.literal(1),
-    revision: idSchema,
+    version: z.literal(2),
+    revision: z.uuid(),
     invoices: z.array(invoiceSchema).max(MAX_INVOICES),
     theme: z.enum(["light", "dark"]),
     filter: filterSchema,
@@ -142,203 +173,266 @@ export const librarySchema = z
       });
   });
 export type Library = z.infer<typeof librarySchema>;
-export function emptyDraft(): Draft {
+
+const EMAIL = z.email();
+function addressBlank(a: Address): boolean {
+  return !a.street.trim() || !a.city.trim() || !a.postCode.trim() || !a.country.trim();
+}
+// Plain-language problems with a stored record, used by the storage schema.
+function issues(invoice: InvoiceFields, intent: "draft" | "send"): string[] {
+  const out: string[] = [];
+  if (invoice.createdAt && !isCalendarDate(invoice.createdAt))
+    out.push("Invoice date is not a real date.");
+  if (invoice.clientEmail && !EMAIL.safeParse(invoice.clientEmail).success)
+    out.push("Client email is invalid.");
+  if (intent === "draft") return out;
+  if (
+    !invoice.createdAt ||
+    !invoice.description.trim() ||
+    !invoice.clientName.trim() ||
+    !invoice.clientEmail ||
+    addressBlank(invoice.senderAddress) ||
+    addressBlank(invoice.clientAddress)
+  )
+    out.push("All fields must be added.");
+  if (!invoice.items.length) out.push("An item must be added.");
+  if (
+    invoice.items.some(
+      (item) => !item.name.trim() || item.quantity === null || item.priceMinor === null,
+    )
+  )
+    out.push("Every item needs a name, quantity and price.");
+  return out;
+}
+
+// ---------- derived values ----------
+export function lineTotal(item: Pick<Item, "quantity" | "priceMinor">): number {
+  return (item.quantity ?? 0) * (item.priceMinor ?? 0);
+}
+export function invoiceTotal(invoice: Pick<Invoice, "items">): number {
+  const total = invoice.items.reduce((sum, item) => sum + lineTotal(item), 0);
+  if (!Number.isSafeInteger(total)) throw new Error("Invoice total is too large.");
+  return total;
+}
+export function paymentDue(invoice: Pick<Invoice, "createdAt" | "paymentTerms">): string | null {
+  return isCalendarDate(invoice.createdAt)
+    ? addDays(invoice.createdAt, invoice.paymentTerms)
+    : null;
+}
+export function termsLabel(terms: Terms): string {
+  return terms === 1 ? "Net 1 Day" : "Net " + terms + " Days";
+}
+export function statusLabel(status: Status): string {
+  return status === "draft" ? "Draft" : status === "pending" ? "Pending" : "Paid";
+}
+export function addressLines(address: Address): string[] {
+  return [address.street, address.city, address.postCode, address.country].filter(
+    (line) => line.trim(),
+  );
+}
+
+// ---------- IDs ----------
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+/** Two random uppercase letters and four random digits, unique in the library. */
+export function newInvoiceId(
+  taken: ReadonlySet<string>,
+  random: () => number = Math.random,
+): string {
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    const pick = (chars: string) => chars[Math.floor(random() * chars.length)];
+    const id =
+      pick(LETTERS) +
+      pick(LETTERS) +
+      pick("0123456789") +
+      pick("0123456789") +
+      pick("0123456789") +
+      pick("0123456789");
+    if (!taken.has(id)) return id;
+  }
+  throw new InvoiceError("Could not create a unique invoice ID.");
+}
+
+// ---------- the form ----------
+export type ItemValues = { id: string; name: string; quantity: string; price: string };
+export type FormValues = {
+  senderAddress: Address;
+  clientName: string;
+  clientEmail: string;
+  clientAddress: Address;
+  createdAt: string;
+  paymentTerms: "1" | "7" | "14" | "30";
+  description: string;
+  items: ItemValues[];
+};
+const blankAddress = (): Address => ({ street: "", city: "", postCode: "", country: "" });
+export function emptyForm(today: string): FormValues {
   return {
-    senderAddress: "",
+    senderAddress: blankAddress(),
     clientName: "",
     clientEmail: "",
-    clientAddress: "",
+    clientAddress: blankAddress(),
+    createdAt: today,
+    paymentTerms: "30",
     description: "",
-    issueDate: "",
-    terms: "30",
     items: [],
   };
 }
-export function toDraft(invoice: Invoice): Draft {
-  if (invoice.status === "draft") return structuredClone(invoice.draft);
-  const { items, terms, ...rest } = invoice.details;
-  const termText = { 1: "1", 7: "7", 14: "14", 30: "30" } satisfies Record<
-    Details["terms"],
-    Draft["terms"]
-  >;
+export function toForm(invoice: Invoice): FormValues {
   return {
-    ...rest,
-    terms: termText[terms],
-    items: items.map((item) => ({
+    senderAddress: { ...invoice.senderAddress },
+    clientName: invoice.clientName,
+    clientEmail: invoice.clientEmail,
+    clientAddress: { ...invoice.clientAddress },
+    createdAt: invoice.createdAt,
+    paymentTerms: String(invoice.paymentTerms) as FormValues["paymentTerms"],
+    description: invoice.description,
+    items: invoice.items.map((item) => ({
       id: item.id,
       name: item.name,
-      quantity: String(item.quantity),
-      price: priceText(item.unitMinor),
+      quantity: item.quantity === null ? "" : String(item.quantity),
+      price: item.priceMinor === null ? "" : priceText(item.priceMinor),
     })),
   };
 }
-export type Validation =
-  | { kind: "valid"; details: Details }
-  | { kind: "invalid"; errors: Record<string, string> };
-export function validatePending(input: Draft): Validation {
+export function formLineTotal(item: ItemValues): number {
+  return (parseQuantity(item.quantity) ?? 0) * (parsePrice(item.price) ?? 0);
+}
+export function formTotal(values: FormValues): number {
+  return values.items.reduce((sum, item) => sum + formLineTotal(item), 0);
+}
+
+/** Field paths used for errors, in the order the form shows them. */
+export const ADDRESS_KEYS = ["street", "city", "postCode", "country"] as const;
+export type Intent = "draft" | "send";
+export type FormResult =
+  | { ok: true; fields: InvoiceFields }
+  | { ok: false; errors: Record<string, string>; summary: string[] };
+
+export const MESSAGES = {
+  empty: "can't be empty",
+  email: "invalid email",
+  date: "invalid date",
+  quantity: "1 to 9999",
+  price: "invalid price",
+} as const;
+
+/**
+ * "send" (Save & Send, Save Changes) needs every field and one item.
+ * "draft" (Save as Draft) accepts blanks, but anything typed must be valid.
+ */
+export function validateForm(values: FormValues, intent: Intent): FormResult {
   const errors: Record<string, string> = {};
-  for (const [key, label] of [
-    ["senderAddress", "Sender address"],
-    ["clientName", "Client name"],
-    ["clientAddress", "Client address"],
-    ["description", "Description"],
-  ] as const) {
-    if (!input[key].trim()) errors[key] = label + " is required.";
-  }
-  if (!z.email().safeParse(input.clientEmail.trim()).success)
-    errors.clientEmail = "Enter a valid client email.";
-  if (!isCalendarDate(input.issueDate))
-    errors.issueDate = "Enter a valid date from 1900 through 9998.";
-  if (input.items.length < 1) errors.items = "Add at least one item.";
-  const items = input.items.map((item) => {
-    if (!item.name.trim()) errors[item.id + ".name"] = "Item name is required.";
-    const quantity = /^\d{1,4}$/.test(item.quantity)
-      ? Number(item.quantity)
-      : 0;
-    if (quantity < 1 || quantity > 9999)
-      errors[item.id + ".quantity"] = "Use a whole quantity from 1 to 9999.";
-    const unitMinor = parseMinor(item.price);
-    if (unitMinor === null)
-      errors[item.id + ".price"] =
-        "Use a price from 0 to 999999.99 with at most two decimals.";
-    return {
-      id: item.id,
-      name: item.name.trim(),
-      quantity,
-      unitMinor: unitMinor ?? 0,
-    };
-  });
-  if (Object.keys(errors).length) return { kind: "invalid", errors };
-  const parsed = detailsSchema.safeParse({
-    ...input,
-    clientEmail: input.clientEmail.trim(),
-    terms: Number(input.terms),
-    items,
-  });
-  if (!parsed.success)
-    return {
-      kind: "invalid",
-      errors: { form: "Check field lengths and unique line items." },
-    };
-  return { kind: "valid", details: parsed.data };
-}
-export function totalMinor(details: Details): number {
-  const total = details.items.reduce(
-    (sum, item) => sum + item.quantity * item.unitMinor,
-    0,
-  );
-  if (!Number.isSafeInteger(total) || total < 0)
-    throw new Error("Invoice total is outside the supported range.");
-  return total;
-}
-export function draftTotal(draft: Draft): number | null {
-  if (!draft.items.length) return null;
-  let total = 0;
-  for (const item of draft.items) {
-    const price = parseMinor(item.price);
-    if (
-      price === null ||
-      !/^\d{1,4}$/.test(item.quantity) ||
-      Number(item.quantity) < 1
-    )
-      return null;
-    total += Number(item.quantity) * price;
-  }
-  return Number.isSafeInteger(total) ? total : null;
-}
-export function saveInvoice(
-  library: Library,
-  id: string,
-  draft: Draft,
-  status: "draft" | "pending",
-  now: number,
-): Library {
-  const current = library.invoices.find((x) => x.id === id);
-  if (!current && library.invoices.length >= MAX_INVOICES)
-    throw new Error(
-      "This local library has 100 invoices. Download a backup and remove an older record before adding another.",
-    );
-  if (current?.status === "paid")
-    throw new Error("Paid demo records are read-only.");
-  if (current?.status === "pending" && status !== "pending")
-    throw new Error("Pending records cannot revert to draft.");
-  const common = {
-    id,
-    createdAt: current?.createdAt ?? now,
-    updatedAt: now,
-    currency: "GBP",
+  let missing = false;
+  const required = (path: string, value: string) => {
+    if (intent === "send" && !value.trim()) {
+      errors[path] = MESSAGES.empty;
+      missing = true;
+    }
   };
-  const ready = status === "pending" ? validatePending(draft) : null;
-  if (ready?.kind === "invalid")
-    throw new Error("Complete the invoice before marking it pending.");
-  const value = invoiceSchema.parse(
-    status === "draft"
-      ? { ...common, status, draft: draftSchema.parse(draft) }
-      : {
-          ...common,
-          status,
-          details: ready?.kind === "valid" ? ready.details : null,
-        },
-  );
-  return librarySchema.parse({
-    ...library,
-    invoices: current
-      ? library.invoices.map((x) => (x.id === id ? value : x))
-      : [...library.invoices, value],
+  for (const key of ADDRESS_KEYS) required("senderAddress." + key, values.senderAddress[key]);
+  required("clientName", values.clientName);
+  const email = values.clientEmail.trim();
+  if (email && !EMAIL.safeParse(email).success) errors.clientEmail = MESSAGES.email;
+  else required("clientEmail", email);
+  for (const key of ADDRESS_KEYS) required("clientAddress." + key, values.clientAddress[key]);
+  if (values.createdAt && !isCalendarDate(values.createdAt)) errors.createdAt = MESSAGES.date;
+  else required("createdAt", values.createdAt);
+  required("description", values.description);
+  let badNumber = false;
+  const items: Item[] = values.items.map((item) => {
+    const base = "items." + item.id + ".";
+    required(base + "name", item.name);
+    const quantity = item.quantity.trim() ? parseQuantity(item.quantity) : null;
+    if (item.quantity.trim() && quantity === null) {
+      errors[base + "quantity"] = MESSAGES.quantity;
+      badNumber = true;
+    } else required(base + "quantity", item.quantity);
+    const priceMinor = item.price.trim() ? parsePrice(item.price) : null;
+    if (item.price.trim() && priceMinor === null) {
+      errors[base + "price"] = MESSAGES.price;
+      badNumber = true;
+    } else required(base + "price", item.price);
+    return { id: item.id, name: item.name.trim(), quantity, priceMinor };
   });
+  const noItems = intent === "send" && values.items.length === 0;
+  if (noItems) errors.items = "An item must be added";
+  const summary: string[] = [];
+  if (missing) summary.push("All fields must be added");
+  if (noItems) summary.push("An item must be added");
+  if (errors.clientEmail === MESSAGES.email) summary.push("Client's email must be a valid address");
+  if (errors.createdAt === MESSAGES.date) summary.push("Invoice date must be a real date");
+  if (badNumber)
+    summary.push(
+      "Quantities must be whole numbers from 1 to 9999; prices up to 999,999.99 with two decimals at most",
+    );
+  if (Object.keys(errors).length) return { ok: false, errors, summary };
+  return {
+    ok: true,
+    fields: {
+      createdAt: values.createdAt,
+      paymentTerms: Number(values.paymentTerms) as Terms,
+      description: values.description.trim(),
+      clientName: values.clientName.trim(),
+      clientEmail: email,
+      senderAddress: trimAddress(values.senderAddress),
+      clientAddress: trimAddress(values.clientAddress),
+      items,
+    },
+  };
 }
-export function markPaid(library: Library, id: string, date: string): Library {
+function trimAddress(a: Address): Address {
+  return {
+    street: a.street.trim(),
+    city: a.city.trim(),
+    postCode: a.postCode.trim(),
+    country: a.country.trim(),
+  };
+}
+
+// ---------- library changes ----------
+function withInvoices(library: Library, invoices: Invoice[]): Library {
+  return librarySchema.parse({ ...library, invoices });
+}
+export function createInvoice(
+  library: Library,
+  fields: InvoiceFields,
+  status: "draft" | "pending",
+  id: string = newInvoiceId(new Set(library.invoices.map((x) => x.id))),
+): { library: Library; id: string } {
+  if (library.invoices.length >= MAX_INVOICES)
+    throw new InvoiceError(
+      "This browser already holds " + MAX_INVOICES + " invoices. Delete one before adding another.",
+    );
+  const invoice = invoiceSchema.parse({ ...fields, id, status });
+  return { library: withInvoices(library, [...library.invoices, invoice]), id };
+}
+/** Save Changes: a draft becomes pending; pending and paid keep their status. */
+export function updateInvoice(library: Library, id: string, fields: InvoiceFields): Library {
   const current = library.invoices.find((x) => x.id === id);
-  if (!current) throw new Error("Invoice is missing.");
+  if (!current) throw new InvoiceError("This invoice no longer exists in this browser.");
+  const status: Status = current.status === "draft" ? "pending" : current.status;
+  const next = invoiceSchema.parse({ ...fields, id, status });
+  return withInvoices(
+    library,
+    library.invoices.map((x) => (x.id === id ? next : x)),
+  );
+}
+export function markPaid(library: Library, id: string): Library {
+  const current = library.invoices.find((x) => x.id === id);
+  if (!current) throw new InvoiceError("This invoice no longer exists in this browser.");
   if (current.status === "paid") return library;
   if (current.status !== "pending")
-    throw new Error("Only pending invoices can be marked paid.");
-  const paid = invoiceSchema.parse({
-    ...current,
-    status: "paid",
-    paidOn: date,
-  });
-  return librarySchema.parse({
-    ...library,
-    invoices: library.invoices.map((x) => (x.id === id ? paid : x)),
-  });
+    throw new InvoiceError("Only pending invoices can be marked as paid.");
+  return withInvoices(
+    library,
+    library.invoices.map((x) => (x.id === id ? { ...x, status: "paid" as const } : x)),
+  );
 }
 export function removeInvoice(library: Library, id: string): Library {
   return { ...library, invoices: library.invoices.filter((x) => x.id !== id) };
 }
-export function label(invoice: Invoice): string {
-  return "INV-" + invoice.id.slice(0, 8).toUpperCase();
-}
-
-export function termsLabel(terms: Draft["terms"]): string {
-  return terms === "1" ? "1 day" : `${terms} days`;
-}
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-// Design format "21 Aug 2021", built by hand so it never depends on locale.
-export function displayDate(date: string): string {
-  if (!isCalendarDate(date)) return date;
-  const [year, month, day] = date.split("-");
-  return day + " " + MONTHS[Number(month) - 1] + " " + year;
-}
-// Pending and paid use saved details; a draft uses its issue date and terms,
-// which is exactly what it gets when marked pending. Null when incomplete.
-export function dueDate(invoice: Invoice): string | null {
-  if (invoice.status !== "draft")
-    return addDays(invoice.details.issueDate, invoice.details.terms);
-  return isCalendarDate(invoice.draft.issueDate)
-    ? addDays(invoice.draft.issueDate, Number(invoice.draft.terms))
-    : null;
+export function visibleInvoices(library: Library): Invoice[] {
+  return library.filter.length
+    ? library.invoices.filter((x) => library.filter.includes(x.status))
+    : library.invoices;
 }

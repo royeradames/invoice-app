@@ -1,194 +1,150 @@
 "use client";
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import {
   displayDate,
-  draftTotal,
-  dueDate,
-  filterSchema,
-  label,
+  invoiceTotal,
   money,
-  toDraft,
+  paymentDue,
+  visibleInvoices,
   type Filter,
 } from "../lib/invoices.ts";
-import { Dialog } from "./dialog";
+import { FilterMenu } from "./filter-menu";
+import { FlashMessage } from "./flash-message";
+import { ArrowRightIcon, PlusIcon } from "./icons";
+import { InvoiceForm } from "./invoice-form";
 import { useLibrary } from "./library-provider";
+import { StatusBadge } from "./status-badge";
+
+const plural = (n: number, word: string) => n + " " + word + (n === 1 ? "" : "s");
+
+function countText(total: number, filter: Filter, visible: number) {
+  if (filter.length === 0)
+    return {
+      wide: total === 1 ? "There is 1 total invoice" : "There are " + total + " total invoices",
+      short: plural(total, "invoice"),
+    };
+  const which = filter.length === 1 ? filter[0] + " " : "matching ";
+  return {
+    wide:
+      visible === 1
+        ? "There is 1 " + which + "invoice"
+        : "There are " + visible + " " + which + "invoices",
+    short: plural(visible, "invoice"),
+  };
+}
+
 export function InvoiceBoard() {
-  const { library, ready, busy, issue, commit, reload, reset } = useLibrary();
-  const [query, setQuery] = useState("");
+  const { library, ready, busy, commit, flash, setFlash } = useLibrary();
+  const flashRef = useRef<HTMLParagraphElement>(null);
+  // Arriving here after a delete: a live region that mounts already filled is
+  // often not read aloud, so move focus to the message itself.
+  const [arrivedWithFlash] = useState(() => flash?.path === "/");
+  useEffect(() => {
+    if (arrivedWithFlash) flashRef.current?.focus();
+  }, [arrivedWithFlash]);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  async function filter(value: Filter) {
-    const result = await commit((current) => ({ ...current, filter: value }));
-    setError(result.ok ? "" : result.message);
-  }
-  const visible = library.invoices.filter((invoice) => {
-    const draft = toDraft(invoice);
-    return (
-      (library.filter === "all" || library.filter === invoice.status) &&
-      (label(invoice) + " " + draft.clientName + " " + draft.description)
-        .toLowerCase()
-        .includes(query.trim().toLowerCase())
-    );
-  });
+  const visible = visibleInvoices(library);
+  const count = countText(library.invoices.length, library.filter, visible.length);
   return (
-    <main id="main" className="shell">
-      <header className="page-heading list-heading">
-        <div>
+    <main id="main" className="page">
+      <header className="list-header">
+        <div className="list-title">
           <h1>Invoices</h1>
-          <p className="muted">
-            {library.invoices.length === 1
-              ? "There is 1 total invoice"
-              : "There are " + library.invoices.length + " total invoices"}
+          <p className="muted" aria-live="polite">
+            {!ready ? (
+              "Opening saved invoices…"
+            ) : (
+              <>
+                <span className="wide-only">{count.wide}</span>
+                <span className="narrow-only">{count.short}</span>
+              </>
+            )}
           </p>
         </div>
-        <label className="filter">
-          Status
-          <select
-            disabled={!ready}
-            aria-busy={busy || undefined}
-            value={library.filter}
-            onChange={(e) => {
-              if (busy) return;
-              const result = filterSchema.safeParse(e.target.value);
-              if (result.success) void filter(result.data);
-            }}
-          >
-            <option value="all">All statuses</option>
-            <option value="draft">Draft</option>
-            <option value="pending">Pending</option>
-            <option value="paid">Paid</option>
-          </select>
-        </label>
-        <a className="button primary new-invoice" href="/invoices/new">
-          <span className="plus" aria-hidden="true" />
-          <span>
-            New<span className="wide-only"> invoice</span>
-          </span>
-        </a>
-      </header>
-      <div className="toolbar">
-        <label className="search">
-          Search invoices
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setQuery("");
-            }}
-          />
-        </label>
-        <button
-          className="secondary"
-          onClick={() => {
-            if (busy) return;
-            const result = reload();
+        <FilterMenu
+          value={library.filter}
+          busy={busy}
+          onChange={async (filter) => {
+            const result = await commit((current) => ({ ...current, filter }));
             setError(result.ok ? "" : result.message);
           }}
+        />
+        <button
+          type="button"
+          className="button primary new-invoice"
+          onClick={() => {
+            if (!ready) return;
+            setFlash(null);
+            setCreating(true);
+          }}
         >
-          Reload saved data
+          <span className="plus-circle" aria-hidden="true">
+            <PlusIcon />
+          </span>
+          {/* One flex item, so the button gap never splits the words. */}
+          <span>
+            New<span className="wide-only">&nbsp;Invoice</span>
+          </span>
         </button>
-        {issue?.kind === "invalid" && (
-          <button
-            className="secondary"
-            onClick={() => {
-              if (busy) return;
-              setError("");
-              setResetOpen(true);
-            }}
-          >
-            Reset unreadable data
-          </button>
-        )}
-      </div>
+      </header>
+      <FlashMessage path="/" ref={flashRef} />
       {error && (
-        <p role="alert" className="notice">
+        <p role="alert" className="form-alert">
           {error}
         </p>
       )}
-      {!ready ? (
-        <p role="status">Opening local invoices…</p>
-      ) : visible.length ? (
+      {!ready ? null : visible.length ? (
         <ul className="invoice-list">
           {visible.map((invoice) => {
-            const draft = toDraft(invoice);
-            const amount = draftTotal(draft);
-            const due = dueDate(invoice);
+            const due = paymentDue(invoice);
             return (
               <li key={invoice.id}>
-                <a className="invoice-card" href={"/invoices/" + invoice.id}>
-                  <strong className="cell-id">{label(invoice)}</strong>
-                  <span className="cell-due">
-                    {due ? "Due " + displayDate(due) : "Due date incomplete"}
+                <Link className="invoice-row" href={"/invoices/" + invoice.id}>
+                  <span className="row-id">
+                    <span className="hash">#</span>
+                    {invoice.id}
                   </span>
-                  <span className="cell-client">
-                    {draft.clientName || "Unnamed draft"}
+                  <span className="row-due">
+                    {due ? "Due " + displayDate(due) : "No due date"}
                   </span>
-                  <strong className="cell-amount">
-                    {amount === null ? "Total incomplete" : money(amount)}
-                  </strong>
-                  <span className={"badge " + invoice.status}>
-                    {invoice.status}
+                  <span className="row-client">{invoice.clientName || "No client name"}</span>
+                  <span className="row-amount">{money(invoiceTotal(invoice))}</span>
+                  <span className="row-status">
+                    <StatusBadge status={invoice.status} />
                   </span>
-                  <span className="cell-arrow" aria-hidden="true" />
-                  <span className="sr-only">View invoice</span>
-                </a>
+                  <ArrowRightIcon className="row-arrow" />
+                </Link>
               </li>
             );
           })}
         </ul>
       ) : (
-        <section className="empty">
-          <h2>
-            {query || library.filter !== "all"
-              ? "No matching invoices"
-              : "No saved invoices"}
-          </h2>
-          <p>
-            {query || library.filter !== "all"
-              ? "Change your search or status filter. Other records are unchanged."
-              : "Create a synthetic draft to try the local workflow."}
-          </p>
+        <section className="empty" aria-labelledby="empty-title">
+          {/* eslint-disable-next-line @next/next/no-img-element -- official SVG illustration */}
+          <img src="/illustration-empty.svg" alt="" width={242} height={200} />
+          <h2 id="empty-title">There is nothing here</h2>
+          {library.invoices.length === 0 ? (
+            <p>
+              Create an invoice by clicking the <br />
+              <strong>
+                New<span className="wide-only"> Invoice</span>
+              </strong>{" "}
+              button and get started
+            </p>
+          ) : (
+            <p>No invoices match this filter. Change the filter to see the rest.</p>
+          )}
         </section>
       )}
-      {resetOpen && (
-        <Dialog
-          title="Reset unreadable invoices?"
-          busy={busy}
-          error={error}
-          cancel={() => setResetOpen(false)}
-        >
-          <p>
-            This replaces unreadable saved data with the three synthetic
-            examples. Download its backup first.
-          </p>
-          <div className="actions">
-            <button
-              autoFocus
-              className="secondary"
-              onClick={() => {
-                if (!busy) setResetOpen(false);
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              className="danger"
-              aria-busy={resetting || undefined}
-              onClick={async () => {
-                if (busy) return;
-                setResetting(true);
-                const result = await reset();
-                setResetting(false);
-                if (result.ok) setResetOpen(false);
-                else setError(result.message);
-              }}
-            >
-              Reset saved library
-            </button>
-          </div>
-        </Dialog>
+      {creating && (
+        <InvoiceForm
+          onClose={(text) => {
+            setCreating(false);
+            if (text) setFlash({ text, path: "/" });
+          }}
+        />
       )}
     </main>
   );
