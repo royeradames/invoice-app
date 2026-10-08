@@ -18,7 +18,8 @@
   --label: #5f6bb4;
   --client: #6a72a1;
   --field-bg: #fff;
-  --field-border: #dfe3fa;
+  /* 3:1 against the field and drawer (WCAG 1.4.11). */
+  --field-border: #888eb0;
   --items-bg: #f9fafe;
   --total-bg: #373b53;
   --sidebar: #373b53;
@@ -37,7 +38,8 @@
   --item-title: #69718a;
   --pending-ink: #9e5800;
   --paid-ink: #17795a;
-  --accent-ink: var(--purple);
+  --accent-ink: #6243f3;
+  --danger-ink: #a83030;
   --focus: #7352f9;
   --sidebar-h: 72px;
   font-family: var(--font-spartan), "League Spartan", Arial, Helvetica, sans-serif;
@@ -47,6 +49,7 @@
 :root[data-theme="dark"] {
   --red: #ec5757;
   --accent-ink: #a18cff;
+  --danger-ink: #ff7a7a;
   --pending-ink: #ff8f00;
   --paid-ink: #33d69f;
   --bg: #141625;
@@ -57,7 +60,7 @@
   --label: #dfe3fa;
   --client: #fff;
   --field-bg: #1e2139;
-  --field-border: #252945;
+  --field-border: #636a9c;
   --items-bg: #252945;
   --total-bg: #0c0e16;
   --sidebar: #1e2139;
@@ -383,7 +386,7 @@ p {
   padding: 12px 16px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--red) 10%, transparent);
-  color: var(--red);
+  color: var(--danger-ink);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
@@ -1224,7 +1227,7 @@ p {
 }
 .input::placeholder {
   color: var(--muted);
-  opacity: 0.6;
+  opacity: 1;
 }
 .input:hover,
 .input:focus {

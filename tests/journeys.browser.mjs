@@ -698,17 +698,33 @@ function lowContrastText() {
     for (const layer of layers.reverse()) colour = over(layer, colour);
     return colour;
   };
-  const scope = document.querySelector("dialog[open]") ?? document.body;
+  const opacityOf = (el) => {
+    let value = 1;
+    for (let node = el; node; node = node.parentElement) value *= Number(getComputedStyle(node).opacity);
+    return value;
+  };
+  const scope = [...document.querySelectorAll("dialog[open]")].pop() ?? document.body;
   const bad = [];
   for (const el of scope.querySelectorAll("*")) {
     const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
     if (!own || !el.getClientRects().length || el.closest(".sr-only, [aria-hidden=true]")) continue;
     const style = getComputedStyle(el);
-    if (style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+    if (style.visibility === "hidden" || opacityOf(el) === 0) continue;
     const size = parseFloat(style.fontSize);
     const large = size >= 24 || (size >= 18.66 && Number(style.fontWeight) >= 700);
-    const value = ratio(over(parse(style.color), backdrop(el)), backdrop(el));
+    const ink = parse(style.color);
+    ink[3] *= opacityOf(el);
+    const value = ratio(over(ink, backdrop(el)), backdrop(el));
     if (value < (large ? 3 : 4.5)) bad.push(el.textContent.trim().slice(0, 30) + " " + value.toFixed(2));
+  }
+  // Placeholders are not text nodes; read their own pseudo-element colour.
+  for (const input of scope.querySelectorAll("input[placeholder], textarea[placeholder]")) {
+    if (input.value || !input.getClientRects().length) continue;
+    const ph = getComputedStyle(input, "::placeholder");
+    const ink = parse(ph.color);
+    ink[3] *= Number(ph.opacity || 1) * opacityOf(input);
+    const value = ratio(over(ink, backdrop(input)), backdrop(input));
+    if (value < 4.5) bad.push("placeholder " + input.placeholder.slice(0, 24) + " " + value.toFixed(2));
   }
   return bad;
 }
@@ -718,6 +734,12 @@ for (const theme of ["light", "dark"]) {
     ["list", "/", null],
     ["detail", "/invoices/XM9141", null],
     ["new invoice errors", "/", "errors"],
+    ["empty new invoice with placeholders", "/", "new"],
+    ["filter menu", "/", "filter"],
+    ["calendar with a selected day", "/", "calendar"],
+    ["delete dialog", "/invoices/XM9141", "delete"],
+    ["confirmation message", "/invoices/XM9141", "paid"],
+    ["save error alert", "/", "save-error"],
   ]) {
     test(`text contrast passes WCAG AA: ${name}, ${theme}`, () =>
       fixture(
@@ -726,10 +748,37 @@ for (const theme of ["light", "dark"]) {
             await page.getByRole("button", { name: "Use dark theme" }).click();
             await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
           }
-          if (open === "errors") {
+          if (open === "errors" || open === "new" || open === "calendar" || open === "save-error")
             await openNew(page);
+          if (open === "errors") {
             await drawer(page).getByRole("button", { name: "Save & Send" }).click();
             await drawer(page).locator(".field-error").first().waitFor();
+          }
+          if (open === "filter") {
+            await page.getByRole("button", { name: /Filter/ }).click();
+            await page.getByRole("checkbox", { name: "Pending" }).waitFor();
+          }
+          if (open === "calendar") {
+            await drawer(page).locator(".date-picker button").first().click();
+            await page.locator(".calendar-day.selected").waitFor();
+          }
+          if (open === "delete") {
+            await page.locator(".wide-actions").getByRole("button", { name: "Delete" }).click();
+            await page.getByRole("heading", { name: "Confirm Deletion" }).waitFor();
+          }
+          if (open === "paid") {
+            await page.locator(".wide-actions").getByRole("button", { name: "Mark as Paid" }).click();
+            await page.waitForFunction(() => document.querySelector("p.flash")?.textContent !== "");
+          }
+          if (open === "save-error") {
+            await page.evaluate(() => {
+              Storage.prototype.setItem = () => {
+                throw new DOMException("full", "QuotaExceededError");
+              };
+            });
+            await drawer(page).getByLabel("Client’s Name").fill("Sample Client S");
+            await drawer(page).getByRole("button", { name: "Save as Draft" }).click();
+            await drawer(page).locator(".form-alert").waitFor();
           }
           await page.waitForTimeout(300);
           assert.deepEqual(await page.evaluate(lowContrastText), []);
