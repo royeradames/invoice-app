@@ -1,7 +1,11 @@
 import { notFound } from "next/navigation";
 import { idSchema } from "../../../../lib/invoices.ts";
 import { InvoiceEditor } from "../../../../components/invoice-editor";
-export const metadata = { title: "Edit invoice" };
+export const metadata = {
+  title: "Edit invoice",
+  description:
+    "Change a saved synthetic invoice draft or pending record in this browser.",
+};
 export default async function Page({
   params,
 }: {

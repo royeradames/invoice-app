@@ -1,7 +1,11 @@
 import { notFound } from "next/navigation";
 import { idSchema } from "../../../lib/invoices.ts";
 import { InvoiceDetail } from "../../../components/invoice-detail";
-export const metadata = { title: "Invoice details" };
+export const metadata = {
+  title: "Invoice details",
+  description:
+    "Review one synthetic invoice, its line items and amount due, stored in this browser.",
+};
 export default async function Page({
   params,
 }: {
