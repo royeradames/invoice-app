@@ -5,3 +5,9 @@ node_modules/
 .test-state/
 *.tsbuildinfo
 next-env.d.ts
+
+# Frontend Mentor design files must never be committed
+*.sketch
+*.fig
+*.xd
+.DS_Store

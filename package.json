@@ -1,5 +1,5 @@
 {
-  "name": "invoice-local-demo",
+  "name": "invoice-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,8 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:browser": "node tests/invoices.browser.mjs && node tests/visual.browser.mjs",
-    "test:visual": "node tests/visual.browser.mjs"
+    "test:browser": "node --test --test-concurrency=1 tests/journeys.browser.mjs"
   },
   "dependencies": {
     "@tanstack/react-form": "1.33.5",
