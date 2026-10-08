@@ -726,11 +726,25 @@ p {
   display: none;
 }
 .narrow-actions {
-  margin-top: 24px;
+  margin-top: 56px;
   padding: 22px 24px;
-  border-radius: 8px;
   background: var(--surface);
-  box-shadow: var(--card-shadow);
+}
+/* Phones: the action bar runs edge to edge at the foot of the page, as in the
+   design, without negative margins; the other children keep the gutter. */
+@media (max-width: 767px) {
+  .page.detail {
+    width: 100%;
+    padding-bottom: 0;
+  }
+  .page.detail > :not(dialog):not(.narrow-actions) {
+    width: min(730px, 100% - 48px);
+    margin-inline: auto;
+  }
+  .page.detail > .go-back {
+    display: flex;
+    width: min(730px, 100% - 48px);
+  }
 }
 .narrow-actions .button {
   padding: 0 20px;
@@ -828,7 +842,7 @@ p {
     padding: 20px 16px;
   }
   .narrow-actions {
-    padding: 16px;
+    padding: 16px 24px;
   }
 }
 @media (min-width: 768px) {
@@ -1473,10 +1487,10 @@ p {
 .detail .flash:not(:empty) {
   margin: 16px 0 0;
 }
-.list-title h1:focus {
+.flash:focus {
   outline: none;
 }
-.list-title h1:focus-visible {
+.flash:focus-visible {
   outline: 2px solid var(--focus);
 }
 

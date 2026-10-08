@@ -36,11 +36,12 @@ function countText(total: number, filter: Filter, visible: number) {
 
 export function InvoiceBoard() {
   const { library, ready, busy, commit, flash, setFlash } = useLibrary();
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  // Arriving here after a delete: put focus on the heading under the message.
+  const flashRef = useRef<HTMLParagraphElement>(null);
+  // Arriving here after a delete: a live region that mounts already filled is
+  // often not read aloud, so move focus to the message itself.
   const [arrivedWithFlash] = useState(() => flash?.path === "/");
   useEffect(() => {
-    if (arrivedWithFlash) headingRef.current?.focus();
+    if (arrivedWithFlash) flashRef.current?.focus();
   }, [arrivedWithFlash]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -50,9 +51,7 @@ export function InvoiceBoard() {
     <main id="main" className="page">
       <header className="list-header">
         <div className="list-title">
-          <h1 ref={headingRef} tabIndex={-1}>
-            Invoices
-          </h1>
+          <h1>Invoices</h1>
           <p className="muted" aria-live="polite">
             {!ready ? (
               "Opening saved invoices…"
@@ -87,7 +86,7 @@ export function InvoiceBoard() {
           New<span className="wide-only">&nbsp;Invoice</span>
         </button>
       </header>
-      <FlashMessage path="/" />
+      <FlashMessage path="/" ref={flashRef} />
       {error && (
         <p role="alert" className="form-alert">
           {error}

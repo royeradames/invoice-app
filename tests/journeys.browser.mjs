@@ -395,18 +395,28 @@ test("Delete asks for confirmation; Cancel keeps it; Delete removes it", () =>
     const flash = page.locator('p.flash[role="status"]');
     assert.equal(await flash.innerText(), "Invoice #XM9141 was deleted.");
     assert.ok(await flash.isVisible());
-    assert.equal(await page.evaluate(() => document.activeElement?.tagName), "H1");
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.textContent),
+      "Invoice #XM9141 was deleted.",
+    );
+    // The next change clears the stale confirmation.
+    await page.getByRole("button", { name: /Filter by status/ }).click();
+    await page.getByRole("checkbox", { name: "Paid" }).check();
+    await page.waitForFunction(() => document.querySelector("p.flash")?.textContent === "");
   }));
 
 test("theme toggles, persists after reload and never flashes light", () =>
   fixture(async (page, context) => {
     await context.addInitScript(() => {
       // Record every theme the document takes from first paint to hydration.
+      // Init scripts run before <html> exists, so observe the document itself.
       window.__themes = [];
-      if (location.protocol !== "http:" || !document.documentElement) return;
-      new MutationObserver(() =>
-        window.__themes.push(document.documentElement.dataset.theme ?? "none"),
-      ).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+      if (location.protocol !== "http:") return;
+      new MutationObserver((records) => {
+        for (const record of records)
+          if (record.target === document.documentElement)
+            window.__themes.push(document.documentElement.dataset.theme ?? "none");
+      }).observe(document, { subtree: true, attributes: true, attributeFilter: ["data-theme"] });
     });
     await page.getByRole("button", { name: "Use dark theme" }).click();
     await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
@@ -418,10 +428,10 @@ test("theme toggles, persists after reload and never flashes light", () =>
     await ready(page);
     assert.ok(await page.getByRole("button", { name: "Use light theme" }).isVisible());
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
-    assert.deepEqual(
-      (await page.evaluate(() => window.__themes)).filter((t) => t !== "dark"),
-      [],
-    );
+    const themes = await page.evaluate(() => window.__themes);
+    // The observer saw the inline script set dark, and nothing else since.
+    assert.ok(themes.includes("dark"), JSON.stringify(themes));
+    assert.deepEqual(themes.filter((t) => t !== "dark"), []);
   }));
 
 test("keyboard: New Invoice opens the drawer, Escape closes it and focus returns", () =>
@@ -528,7 +538,7 @@ for (const [path, selector] of [
           els
             .filter((el) => {
               const lh = parseFloat(getComputedStyle(el).lineHeight) || 22;
-              return el.getBoundingClientRect().height > lh * 1.5 && !el.textContent.includes(" ") === false && el.textContent.length < 20;
+              return el.getBoundingClientRect().height > lh * 1.5 && el.textContent.includes(" ") && el.textContent.length < 20;
             })
             .map((el) => el.textContent),
         );
@@ -537,3 +547,37 @@ for (const [path, selector] of [
       { width: 320, path },
     ));
 }
+
+test("drawer item rows fit at 320px with the total on its own line", () =>
+  fixture(
+    async (page) => {
+      await openNew(page);
+      await addItem(page, 1, "Brand Guidelines", "9999", "999999.99");
+      const result = await drawer(page).evaluate((d) => {
+        const body = d.querySelector(".drawer-body");
+        const row = d.querySelector(".item-row");
+        const total = d.querySelector(".item-total-value");
+        const lh = parseFloat(getComputedStyle(total).lineHeight) || 22;
+        return {
+          spill: body.scrollWidth - body.clientWidth,
+          rowRight: row.getBoundingClientRect().right <= body.getBoundingClientRect().right,
+          totalOneLine: total.getBoundingClientRect().height < lh * 1.5,
+        };
+      });
+      assert.deepEqual(result, { spill: 0, rowRight: true, totalOneLine: true });
+    },
+    { width: 320 },
+  ));
+
+test("phone detail: action bar spans the page with no horizontal spill", () =>
+  fixture(
+    async (page) => {
+      const bar = page.locator(".narrow-actions");
+      await bar.waitFor();
+      const box = await bar.boundingBox();
+      assert.equal(Math.round(box.x), 0);
+      assert.equal(Math.round(box.width), 375);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 375);
+    },
+    { width: 375, path: "/invoices/XM9141" },
+  ));

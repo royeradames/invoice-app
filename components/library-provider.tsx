@@ -152,6 +152,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       if (result.kind !== "saved") return { ok: false, message: result.message };
       apply(result.snapshot);
       setIssue(null);
+      // Any later change makes an earlier confirmation stale; callers that
+      // confirm this change set their message after this returns.
+      setFlash(null);
       return { ok: true };
     } catch (error) {
       return {
