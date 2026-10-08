@@ -313,3 +313,32 @@ export function label(invoice: Invoice): string {
 export function termsLabel(terms: Draft["terms"]): string {
   return terms === "1" ? "1 day" : `${terms} days`;
 }
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+// Design format "21 Aug 2021", built by hand so it never depends on locale.
+export function displayDate(date: string): string {
+  if (!isCalendarDate(date)) return date;
+  const [year, month, day] = date.split("-");
+  return day + " " + MONTHS[Number(month) - 1] + " " + year;
+}
+// Pending and paid use saved details; a draft uses its issue date and terms,
+// which is exactly what it gets when marked pending. Null when incomplete.
+export function dueDate(invoice: Invoice): string | null {
+  if (invoice.status !== "draft")
+    return addDays(invoice.details.issueDate, invoice.details.terms);
+  return isCalendarDate(invoice.draft.issueDate)
+    ? addDays(invoice.draft.issueDate, Number(invoice.draft.terms))
+    : null;
+}

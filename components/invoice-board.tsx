@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
 import {
+  displayDate,
   draftTotal,
+  dueDate,
   filterSchema,
   label,
   money,
@@ -15,6 +17,7 @@ export function InvoiceBoard() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
   async function filter(value: Filter) {
     const result = await commit((current) => ({ ...current, filter: value }));
     setError(result.ok ? "" : result.message);
@@ -30,34 +33,23 @@ export function InvoiceBoard() {
   });
   return (
     <main id="main" className="shell">
-      <header className="page-heading">
+      <header className="page-heading list-heading">
         <div>
-          <p className="eyebrow">Local demo workspace</p>
           <h1>Invoices</h1>
-          <p>{library.invoices.length} saved synthetic records</p>
+          <p className="muted">
+            {library.invoices.length === 1
+              ? "There is 1 total invoice"
+              : "There are " + library.invoices.length + " total invoices"}
+          </p>
         </div>
-        <a className="button primary" href="/invoices/new">
-          New invoice
-        </a>
-      </header>
-      <div className="toolbar">
-        <label>
-          Search invoices
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setQuery("");
-            }}
-          />
-        </label>
-        <label>
+        <label className="filter">
           Status
           <select
-            disabled={!ready || busy}
+            disabled={!ready}
+            aria-busy={busy || undefined}
             value={library.filter}
             onChange={(e) => {
+              if (busy) return;
               const result = filterSchema.safeParse(e.target.value);
               if (result.success) void filter(result.data);
             }}
@@ -68,21 +60,29 @@ export function InvoiceBoard() {
             <option value="paid">Paid</option>
           </select>
         </label>
+        <a className="button primary new-invoice" href="/invoices/new">
+          <span className="plus" aria-hidden="true" />
+          <span>
+            New<span className="wide-only"> invoice</span>
+          </span>
+        </a>
+      </header>
+      <div className="toolbar">
+        <label className="search">
+          Search invoices
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setQuery("");
+            }}
+          />
+        </label>
         <button
-          disabled={!ready || busy}
-          onClick={async () => {
-            const result = await commit((current) => ({
-              ...current,
-              theme: current.theme === "light" ? "dark" : "light",
-            }));
-            setError(result.ok ? "" : result.message);
-          }}
-        >
-          Use {library.theme === "light" ? "dark" : "light"} theme
-        </button>
-        <button
-          disabled={!ready || busy}
+          className="secondary"
           onClick={() => {
+            if (busy) return;
             const result = reload();
             setError(result.ok ? "" : result.message);
           }}
@@ -91,8 +91,9 @@ export function InvoiceBoard() {
         </button>
         {issue?.kind === "invalid" && (
           <button
-            disabled={busy}
+            className="secondary"
             onClick={() => {
+              if (busy) return;
               setError("");
               setResetOpen(true);
             }}
@@ -113,18 +114,24 @@ export function InvoiceBoard() {
           {visible.map((invoice) => {
             const draft = toDraft(invoice);
             const amount = draftTotal(draft);
+            const due = dueDate(invoice);
             return (
               <li key={invoice.id}>
                 <a className="invoice-card" href={"/invoices/" + invoice.id}>
-                  <strong>{label(invoice)}</strong>
-                  <span>{draft.clientName || "Unnamed draft"}</span>
-                  <span>{draft.issueDate || "Date incomplete"}</span>
-                  <strong>
+                  <strong className="cell-id">{label(invoice)}</strong>
+                  <span className="cell-due">
+                    {due ? "Due " + displayDate(due) : "Due date incomplete"}
+                  </span>
+                  <span className="cell-client">
+                    {draft.clientName || "Unnamed draft"}
+                  </span>
+                  <strong className="cell-amount">
                     {amount === null ? "Total incomplete" : money(amount)}
                   </strong>
                   <span className={"badge " + invoice.status}>
                     {invoice.status}
                   </span>
+                  <span className="cell-arrow" aria-hidden="true" />
                   <span className="sr-only">View invoice</span>
                 </a>
               </li>
@@ -159,15 +166,21 @@ export function InvoiceBoard() {
           <div className="actions">
             <button
               autoFocus
-              disabled={busy}
-              onClick={() => setResetOpen(false)}
+              className="secondary"
+              onClick={() => {
+                if (!busy) setResetOpen(false);
+              }}
             >
               Cancel
             </button>
             <button
-              disabled={busy}
+              className="danger"
+              aria-busy={resetting || undefined}
               onClick={async () => {
+                if (busy) return;
+                setResetting(true);
                 const result = await reset();
+                setResetting(false);
                 if (result.ok) setResetOpen(false);
                 else setError(result.message);
               }}

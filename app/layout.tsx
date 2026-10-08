@@ -1,14 +1,28 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import { LibraryProvider } from "../components/library-provider";
+import { SITE_NAME, SITE_URL } from "../lib/site.ts";
 import "./globals.css";
+
+// League Spartan is the official design typeface (SIL OFL, see fonts/OFL.txt),
+// self-hosted so the page makes no remote font request.
+const spartan = localFont({
+  src: "./fonts/LeagueSpartan-Variable.woff2",
+  variable: "--font-spartan",
+  display: "swap",
+  weight: "100 900",
+});
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "Invoices | Synthetic local demo",
-    template: "%s | Invoice demo",
+    default: "Invoices | " + SITE_NAME,
+    template: "%s | " + SITE_NAME,
   },
   description:
     "Practice invoice draft, pending and paid workflows with fictional GBP records saved in this browser.",
+  openGraph: { siteName: SITE_NAME, type: "website" },
   robots: { index: false, follow: false },
   icons: {
     icon: [
@@ -26,7 +40,7 @@ export const metadata: Metadata = {
 };
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={spartan.variable}>
       <body>
         <a className="skip-link" href="#main">
           Skip to content

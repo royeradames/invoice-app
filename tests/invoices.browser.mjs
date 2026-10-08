@@ -174,7 +174,9 @@ test("pending creation, same-mounted repeated Save and reload retain exact form 
     await client.waitFor();
     assert.equal(await client.inputValue(), "Renamed synthetic client");
     await page.getByRole("link", { name: "Back without saving" }).click();
-    await page.getByText("Due: 2024-02-29", { exact: true }).waitFor();
+    // Payment due uses the design date format; 2024 is a leap year.
+    await page.getByRole("heading", { name: "Payment due", exact: true }).waitFor();
+    await page.getByText("29 Feb 2024", { exact: true }).waitFor();
   }));
 
 test("pending to paid changes only the selected record and removes edit/mark controls", async () =>

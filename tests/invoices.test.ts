@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addDays,
+  displayDate,
+  dueDate,
   draftSchema,
   draftTotal,
   emptyDraft,
@@ -322,4 +324,17 @@ test("collection and item boundaries are independent from the UTF-8 byte limit",
 test("payment terms read naturally for one day and many days", () => {
   assert.equal(termsLabel("1"), "1 day");
   assert.equal(termsLabel("30"), "30 days");
+});
+
+test("list dates use the design format and drafts derive due from terms", () => {
+  assert.equal(displayDate("2026-10-07"), "07 Oct 2026");
+  assert.equal(displayDate("incomplete"), "incomplete");
+  const [draft, pending, paid] = seedLibrary.invoices;
+  assert.equal(dueDate(draft!), "2026-11-06");
+  assert.equal(dueDate(pending!), "2026-10-08");
+  assert.equal(dueDate(paid!), "2026-10-09");
+  assert.equal(
+    dueDate({ ...draft!, draft: { ...complete(), issueDate: "" } } as never),
+    null,
+  );
 });

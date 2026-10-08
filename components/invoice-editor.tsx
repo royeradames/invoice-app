@@ -79,7 +79,9 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
   const [message, setMessage] = useState("");
   const [intent, setIntent] = useState<Intent | null>(null);
   const [dialogError, setDialogError] = useState("");
+  const [resetting, setResetting] = useState(false);
   const savingRef = useRef(false);
+  const [savingAs, setSavingAs] = useState<"" | "draft" | "pending">("");
   const errorRef = useRef<HTMLDivElement>(null);
   const total = (values: Draft) => draftTotal(values);
   const dirty = (values: Draft, saved: Draft | null) =>
@@ -104,6 +106,7 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
   async function save(status: "draft" | "pending"): Promise<boolean> {
     if (savingRef.current || busy) return false;
     savingRef.current = true;
+    setSavingAs(status);
     setMessage("");
     setDialogError("");
     try {
@@ -152,6 +155,7 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
       return true;
     } finally {
       savingRef.current = false;
+      setSavingAs("");
     }
   }
   function finish(next: Intent) {
@@ -191,6 +195,50 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
       return;
     event.preventDefault();
     request({ kind: "leave", href });
+  }
+  function renderField(name: (typeof fields)[number]["name"]) {
+    const { label: caption, limit } = fields.find((x) => x.name === name)!;
+    return (
+      <form.Field key={name} name={name}>
+        {(field) => (
+          <label
+            className={
+              (errors[name] ? "invalid " : "") +
+              (name === "description" ||
+              name === "senderAddress" ||
+              name === "clientAddress"
+                ? "wide"
+                : "")
+            }
+          >
+            <span id={name + "-label"}>{caption}</span>
+            <input
+              aria-labelledby={name + "-label"}
+              type={name === "issueDate" ? "date" : "text"}
+              maxLength={limit}
+              readOnly={busy}
+              value={field.state.value}
+              onChange={(event) => {
+                field.handleChange(event.target.value);
+                setErrors((current) => {
+                  const next = { ...current };
+                  delete next[name];
+                  return next;
+                });
+              }}
+              onBlur={field.handleBlur}
+              aria-invalid={Boolean(errors[name])}
+              aria-describedby={errors[name] ? name + "-error" : undefined}
+            />
+            {errors[name] && (
+              <span id={name + "-error"} className="field-error">
+                {errors[name]}
+              </span>
+            )}
+          </label>
+        )}
+      </form.Field>
+    );
   }
   return (
     <form.Subscribe selector={(state) => state.values}>
@@ -250,49 +298,26 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                 void save("pending");
               }}
             >
-              <fieldset disabled={busy}>
-                <legend>Invoice details</legend>
+              <fieldset aria-busy={busy || undefined}>
+                <legend className="group-title">Bill from</legend>
+                <div className="form-grid">{renderField("senderAddress")}</div>
+              </fieldset>
+              <fieldset aria-busy={busy || undefined}>
+                <legend className="group-title">Bill to</legend>
                 <div className="form-grid">
-                  {fields.map(({ name, label: caption, limit }) => (
-                    <form.Field key={name} name={name}>
-                      {(field) => (
-                        <label>
-                          <span id={name + "-label"}>{caption}</span>
-                          <input
-                            aria-labelledby={name + "-label"}
-                            type={name === "issueDate" ? "date" : "text"}
-                            maxLength={limit}
-                            value={field.state.value}
-                            onChange={(event) => {
-                              field.handleChange(event.target.value);
-                              setErrors((current) => {
-                                const next = { ...current };
-                                delete next[name];
-                                return next;
-                              });
-                            }}
-                            onBlur={field.handleBlur}
-                            aria-invalid={Boolean(errors[name])}
-                            aria-describedby={
-                              errors[name] ? name + "-error" : undefined
-                            }
-                          />
-                          {errors[name] && (
-                            <span id={name + "-error"} className="field-error">
-                              {errors[name]}
-                            </span>
-                          )}
-                        </label>
-                      )}
-                    </form.Field>
-                  ))}
+                  {renderField("clientName")}
+                  {renderField("clientEmail")}
+                  {renderField("clientAddress")}
+                  {renderField("issueDate")}
                   <form.Field name="terms">
                     {(field) => (
                       <label>
                         Payment terms
                         <select
                           value={field.state.value}
+                          aria-busy={busy || undefined}
                           onChange={(event) => {
+                            if (busy) return;
                             const parsed = draftSchema.shape.terms.safeParse(
                               event.target.value,
                             );
@@ -307,10 +332,11 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                       </label>
                     )}
                   </form.Field>
+                  {renderField("description")}
                 </div>
               </fieldset>
-              <fieldset disabled={busy}>
-                <legend>Line items</legend>
+              <fieldset aria-busy={busy || undefined}>
+                <legend className="item-list-title">Item list</legend>
                 {errors.items && <p role="alert">{errors.items}</p>}
                 {values.items.map((item, index) => (
                   <section
@@ -318,14 +344,20 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                     key={item.id}
                     aria-label={"Item " + (index + 1)}
                   >
-                    <h3>Item {index + 1}</h3>
+                    <h3 className="sr-only">Item {index + 1}</h3>
                     <form.Field name={`items[${index}].name`}>
                       {(field) => (
-                        <label>
+                        <label
+                          className={
+                            "item-name" +
+                            (errors[item.id + ".name"] ? " invalid" : "")
+                          }
+                        >
                           <span id={item.id + "-name-label"}>Item name</span>
                           <input
                             aria-labelledby={item.id + "-name-label"}
                             maxLength={100}
+                            readOnly={busy}
                             value={field.state.value}
                             onChange={(e) => {
                               field.handleChange(e.target.value);
@@ -351,12 +383,18 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                     </form.Field>
                     <form.Field name={`items[${index}].quantity`}>
                       {(field) => (
-                        <label>
+                        <label
+                          className={
+                            "item-quantity" +
+                            (errors[item.id + ".quantity"] ? " invalid" : "")
+                          }
+                        >
                           <span id={item.id + "-quantity-label"}>Quantity</span>
                           <input
                             aria-labelledby={item.id + "-quantity-label"}
                             inputMode="numeric"
                             maxLength={10}
+                            readOnly={busy}
                             value={field.state.value}
                             onChange={(e) => {
                               field.handleChange(e.target.value);
@@ -384,7 +422,12 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                     </form.Field>
                     <form.Field name={`items[${index}].price`}>
                       {(field) => (
-                        <label>
+                        <label
+                          className={
+                            "item-price" +
+                            (errors[item.id + ".price"] ? " invalid" : "")
+                          }
+                        >
                           <span id={item.id + "-price-label"}>
                             Unit price (GBP)
                           </span>
@@ -392,6 +435,7 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                             aria-labelledby={item.id + "-price-label"}
                             inputMode="decimal"
                             maxLength={16}
+                            readOnly={busy}
                             value={field.state.value}
                             onChange={(e) => {
                               field.handleChange(e.target.value);
@@ -415,15 +459,19 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                         </label>
                       )}
                     </form.Field>
-                    <p>
-                      Line total:{" "}
-                      {draftTotal({ ...values, items: [item] }) === null
-                        ? "Incomplete"
-                        : money(draftTotal({ ...values, items: [item] }) ?? 0)}
+                    <p className="item-total">
+                      <span>Line total</span>
+                      <strong>
+                        {draftTotal({ ...values, items: [item] }) === null
+                          ? "Incomplete"
+                          : money(draftTotal({ ...values, items: [item] }) ?? 0)}
+                      </strong>
                     </p>
                     <button
                       type="button"
+                      className="remove-item"
                       onClick={() => {
+                        if (busy) return;
                         form.setFieldValue(
                           "items",
                           values.items.filter((x) => x.id !== item.id),
@@ -437,14 +485,17 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                         );
                       }}
                     >
-                      Remove item {index + 1}
+                      <span className="trash" aria-hidden="true" />
+                      <span className="sr-only">Remove item {index + 1}</span>
                     </button>
                   </section>
                 ))}
                 <button
                   type="button"
+                  className="add-item"
                   disabled={values.items.length >= MAX_ITEMS}
                   onClick={() => {
+                    if (busy) return;
                     form.pushFieldValue("items", {
                       id: crypto.randomUUID(),
                       name: "",
@@ -458,9 +509,9 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                     });
                   }}
                 >
-                  Add item
+                  <span aria-hidden="true">+ </span>Add item
                 </button>
-                <p>
+                <p className="muted">
                   {values.items.length} / {MAX_ITEMS} items · whole quantities
                   only
                 </p>
@@ -471,10 +522,10 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                   {amount === null ? "Incomplete" : money(amount)}
                 </strong>
               </p>
-              <div className="actions">
+              <div className="actions form-actions">
                 <button
                   type="button"
-                  disabled={busy}
+                  className="secondary"
                   onClick={() => request({ kind: "leave", href: back })}
                 >
                   Cancel
@@ -482,13 +533,18 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                 {savedStatus === "draft" && (
                   <button
                     type="button"
-                    disabled={busy}
+                    className="dark"
+                    aria-busy={(savingAs === "draft" && !intent) || undefined}
                     onClick={() => void save("draft")}
                   >
                     Save draft
                   </button>
                 )}
-                <button type="submit" className="primary" disabled={busy}>
+                <button
+                  type="submit"
+                  className="primary"
+                  aria-busy={(savingAs === "pending" && !intent) || undefined}
+                >
                   {savedStatus === "pending"
                     ? "Save changes"
                     : "Save as pending"}
@@ -497,7 +553,7 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
             </form>
             <div className="actions">
               <button
-                disabled={busy}
+                className="secondary"
                 onClick={() =>
                   downloadJson(values, "synthetic-invoice-draft.json")
                 }
@@ -505,14 +561,14 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                 Download current draft
               </button>
               <button
-                disabled={busy}
+                className="secondary"
                 onClick={() => request({ kind: "reload" })}
               >
                 Reload saved data
               </button>
               {issue?.kind === "invalid" && (
                 <button
-                  disabled={busy}
+                  className="secondary"
                   onClick={() => request({ kind: "reset" })}
                 >
                   Reset unreadable data
@@ -540,15 +596,21 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                     <div className="actions">
                       <button
                         autoFocus
-                        disabled={busy}
-                        onClick={() => setIntent(null)}
+                        className="secondary"
+                        onClick={() => {
+                          if (!busy) setIntent(null);
+                        }}
                       >
                         Cancel
                       </button>
                       <button
-                        disabled={busy}
+                        className="danger"
+                        aria-busy={resetting || undefined}
                         onClick={async () => {
+                          if (busy) return;
+                          setResetting(true);
                           const result = await reset();
+                          setResetting(false);
                           if (!result.ok) setDialogError(result.message);
                         }}
                       >
@@ -566,17 +628,24 @@ function DraftEditor({ invoice }: { invoice?: Invoice }) {
                     <div className="actions">
                       <button
                         autoFocus
-                        disabled={busy}
-                        onClick={() => setIntent(null)}
+                        className="secondary"
+                        onClick={() => {
+                          if (!busy) setIntent(null);
+                        }}
                       >
                         Cancel
                       </button>
-                      <button disabled={busy} onClick={() => finish(intent)}>
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          if (!busy && !savingRef.current) finish(intent);
+                        }}
+                      >
                         Discard changes
                       </button>
                       <button
                         className="primary"
-                        disabled={busy}
+                        aria-busy={savingAs !== "" || undefined}
                         onClick={() => void continueWithSave()}
                       >
                         Save and continue

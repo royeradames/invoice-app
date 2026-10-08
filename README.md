@@ -1,6 +1,6 @@
 # Invoice: synthetic local foundation
 
-This new application practices draft, pending and paid invoice states using original fictional GBP examples. It is not a payment, email, accounting or authenticated service. Data lives only in this origin's browser storage. The supplied Frontend Mentor JSON, design archive, typography and exact visual comparison remain missing. Synthetic records must never be represented as official starter data or real customers.
+This new application practices draft, pending and paid invoice states using original fictional GBP examples. It is not a payment, email, accounting or authenticated service. Data lives only in this origin's browser storage. Layout, colors and League Spartan typography follow the official Frontend Mentor Figma design (self-hosted font, SIL OFL), with text kept at 16 px or larger. The official data.json is not used. Synthetic records must never be represented as official starter data or real customers.
 
 ## Accepted boundaries
 
@@ -16,8 +16,6 @@ No auth package, database, API handlers, real financial data, remote fonts, anal
 
 ## Verification status
 
-Source-only preparation at an identified empty local baseline. No install, root lock generation, build, tests, browser, source commit/push or provider setup yet.
+Use Node 24.11.1. Verified on Mac2 for this branch: `npm ci` from the committed lock, `npm run lint` (0 errors), `npm run typecheck`, `npm test` (unit), `npm run build`, and both browser suites against `next start` on 127.0.0.1: `node tests/invoices.browser.mjs` (workflows) and `node tests/visual.browser.mjs` (design and layout regressions: centered modal, aligned list columns, 104 px badges, design red errors, select caret inset, busy-not-disabled actions, unclipped mobile line items, site name metadata). The browser helpers accept localhost only, use the pinned `playwright` package with the installed Chrome, and read `INVOICE_URL` (default http://127.0.0.1:4395). Hosted authentication needs a separate reviewed exact-origin wrapper.
 
-Use Node 24.11.1. The first authorized execution must generate/review the root lock, then run npm test, npm run lint, npm run typecheck, npm run build and npm audit --omit=dev. Start on port 4395 only in the serialized runtime slot. The prepared browser helper accepts localhost only and an explicitly selected installed Playwright module. Hosted authentication needs a separate reviewed exact-origin wrapper.
-
-An original receipt SVG and matching 32/96 px raster, 32 px ICO and 180 px Apple icon are prepared. Their source generator uses only the Python standard library. They still need served-artifact and visual inspection. No PWA/offline-installation claim. Titles are generic; no record content appears in metadata. Official asset/design fidelity and later central authentication remain separate gates.
+An original receipt SVG and matching 32/96 px raster, 32 px ICO and 180 px Apple icon are prepared. Their source generator uses only the Python standard library. They still need served-artifact and visual inspection. No PWA/offline-installation claim. Titles are generic; no record content appears in metadata. Later central authentication remains a separate gate.
