@@ -404,7 +404,8 @@ export function createInvoice(
       "This browser already holds " + MAX_INVOICES + " invoices. Delete one before adding another.",
     );
   const invoice = invoiceSchema.parse({ ...fields, id, status });
-  return { library: withInvoices(library, [...library.invoices, invoice]), id };
+  // A new invoice goes to the top of the list, where the person who made it looks for it.
+  return { library: withInvoices(library, [invoice, ...library.invoices]), id };
 }
 /** Save Changes: a draft becomes pending; pending and paid keep their status. */
 export function updateInvoice(library: Library, id: string, fields: InvoiceFields): Library {
@@ -435,4 +436,18 @@ export function visibleInvoices(library: Library): Invoice[] {
   return library.filter.length
     ? library.invoices.filter((x) => library.filter.includes(x.status))
     : library.invoices;
+}
+
+// The list offers a client or ID search once it passes SEARCH_ABOVE invoices,
+// and shows LIST_STEP rows at a time.
+export const SEARCH_ABOVE = 10;
+export const LIST_STEP = 10;
+export function searchInvoices(invoices: Invoice[], query: string): Invoice[] {
+  const needle = query.trim().replace(/^#/, "").toLocaleLowerCase();
+  if (!needle) return invoices;
+  return invoices.filter(
+    (x) =>
+      x.id.toLocaleLowerCase().includes(needle) ||
+      x.clientName.toLocaleLowerCase().includes(needle),
+  );
 }
