@@ -65,13 +65,16 @@ export function InvoiceBoard() {
     search("");
     searchRef.current?.focus();
   }
+  // Show more can disappear with the last rows, so focus moves to the first row it revealed.
+  const focusRow = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusRow.current === null) return;
+    listRef.current?.querySelectorAll<HTMLAnchorElement>(".invoice-row")[focusRow.current]?.focus();
+    focusRow.current = null;
+  }, [limit]);
   function showMore() {
-    const firstNew = shown.length;
+    focusRow.current = shown.length;
     setLimit((current) => current + LIST_STEP);
-    // The button may go with the last rows; keep focus on the first row it revealed.
-    requestAnimationFrame(() =>
-      listRef.current?.querySelectorAll<HTMLAnchorElement>(".invoice-row")[firstNew]?.focus(),
-    );
   }
   return (
     <main id="main" className="page">

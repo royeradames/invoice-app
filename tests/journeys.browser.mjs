@@ -869,7 +869,7 @@ for (const count of [30, 100]) {
         assert.equal(await rows(page).count(), 20);
         await page.getByText(`Showing 20 of ${count} invoices`, { exact: true }).waitFor();
         // Focus moves to the first row Show more revealed.
-        assert.equal(await rows(page).nth(10).locator("a").evaluate((el) => el === document.activeElement), true);
+        await page.waitForFunction(() => document.activeElement === document.querySelectorAll(".invoice-list > li a")[10]);
 
         await invoiceSearch(page).fill("#sy0007");
         await page.waitForFunction(() => document.querySelectorAll(".invoice-list > li").length === 1);
