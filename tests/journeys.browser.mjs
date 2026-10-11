@@ -181,7 +181,7 @@ test("Save as Draft keeps a partial invoice with a new AA0000 ID", () =>
     await drawer(page).getByRole("button", { name: "Save as Draft" }).click();
     await drawer(page).waitFor({ state: "detached" });
     assert.equal(await rows(page).count(), 8);
-    const row = rows(page).last();
+    const row = rows(page).first();
     assert.match(await row.innerText(), /#[A-Z]{2}\d{4}[\s\S]*Partial Client[\s\S]*£\s0\.00[\s\S]*Draft/);
     // A visible, announced confirmation names the new status.
     const id = (await row.locator(".row-id").innerText()).replace("#", "");
@@ -194,8 +194,8 @@ test("Save as Draft keeps a partial invoice with a new AA0000 ID", () =>
     await ready(page);
     assert.equal(await rows(page).count(), 8);
     const saved = await stored(page);
-    assert.equal(saved.invoices.at(-1).status, "draft");
-    assert.equal(saved.invoices.at(-1).clientEmail, "");
+    assert.equal(saved.invoices[0].status, "draft");
+    assert.equal(saved.invoices[0].clientEmail, "");
   }));
 
 test("Save & Send creates a pending invoice; items add, remove and total", () =>
@@ -216,7 +216,7 @@ test("Save & Send creates a pending invoice; items add, remove and total", () =>
     assert.equal(await totals.count(), 2);
     await d.getByRole("button", { name: "Save & Send" }).click();
     await d.waitFor({ state: "detached" });
-    const row = rows(page).last();
+    const row = rows(page).first();
     assert.match(await row.innerText(), new RegExp("Due " + today(7) + "[\\s\\S]*Alex Grim[\\s\\S]*£\\s556\\.00[\\s\\S]*Pending"));
     await row.click();
     await page.waitForURL(/\/invoices\/[A-Z]{2}\d{4}$/);
@@ -819,4 +819,117 @@ for (const theme of ["light", "dark"]) {
       });
       assert.ok(ratios.length > 0 && ratios.every((r) => r >= 3), JSON.stringify(ratios));
     }));
+}
+
+// ---------- growing list: synthetic libraries of 1, 6, 30 and 100 invoices ----------
+function seedInvoices(count) {
+  const blank = { street: "", city: "", postCode: "", country: "" };
+  const invoices = Array.from({ length: count }, (_, index) => ({
+    id: "SY" + String(count - index).padStart(4, "0"),
+    status: "draft",
+    createdAt: "2026-01-01",
+    paymentTerms: 30,
+    description: "",
+    clientName: "Client " + (count - index),
+    clientEmail: "",
+    senderAddress: blank,
+    clientAddress: blank,
+    items: [],
+  }));
+  const library = { version: 2, revision: "11111111-1111-4111-8111-111111111111", invoices, theme: "light", filter: [] };
+  // Seed once per tab session, so a reload keeps what the test saved.
+  return `if (location.protocol === "http:" && !sessionStorage.getItem("seeded")) {
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem(${JSON.stringify(KEY)}, ${JSON.stringify(JSON.stringify(library))});
+  }`;
+}
+const invoiceSearch = (page) => page.getByRole("searchbox", { name: "Search invoices", exact: true });
+const showMore = (page) => page.getByRole("button", { name: "Show more invoices", exact: true });
+
+for (const count of [1, 6]) {
+  test(`${count} invoices: every row shows, with no search and no Show more`, () =>
+    fixture(
+      async (page) => {
+        assert.equal(await rows(page).count(), count);
+        assert.equal(await invoiceSearch(page).count(), 0);
+        assert.equal(await showMore(page).count(), 0);
+      },
+      { setup: seedInvoices(count) },
+    ));
+}
+
+for (const count of [30, 100]) {
+  test(`${count} invoices: ten rows at a time, a count, Show more and a client or ID search`, () =>
+    fixture(
+      async (page) => {
+        assert.equal(await rows(page).count(), 10);
+        assert.match(await rows(page).first().innerText(), new RegExp("SY" + String(count).padStart(4, "0")));
+        await page.getByText(`Showing 10 of ${count} invoices`, { exact: true }).waitFor();
+        await showMore(page).click();
+        assert.equal(await rows(page).count(), 20);
+        await page.getByText(`Showing 20 of ${count} invoices`, { exact: true }).waitFor();
+        // Focus moves to the first row Show more revealed.
+        await page.waitForFunction(() => document.activeElement === document.querySelectorAll(".invoice-list > li a")[10]);
+
+        if (count === 30) {
+          // The last Show more disappears with the last rows; focus lands on the first of them, not the page.
+          await showMore(page).click();
+          await page.getByText("Showing 30 of 30 invoices", { exact: true }).waitFor();
+          assert.equal(await showMore(page).count(), 0);
+          await page.waitForFunction(() => document.activeElement === document.querySelectorAll(".invoice-list > li a")[20]);
+        }
+
+        await invoiceSearch(page).fill("#sy0007");
+        await page.waitForFunction(() => document.querySelectorAll(".invoice-list > li").length === 1);
+        assert.ok(await page.getByText("There is 1 matching invoice").isVisible());
+        await invoiceSearch(page).fill("client 2");
+        const expected = Array.from({ length: count }, (_, i) => "Client " + (i + 1)).filter((n) => n.toLowerCase().includes("client 2")).length;
+        await page.waitForFunction((n) => document.querySelectorAll(".invoice-list > li").length === n, Math.min(10, expected));
+        assert.ok(await page.getByText(`There are ${expected} matching invoices`).isVisible());
+        await invoiceSearch(page).fill("nobody");
+        await page.getByText("No invoices match “nobody”.", { exact: true }).waitFor();
+        await page.getByRole("button", { name: "Clear search", exact: true }).click();
+        assert.equal(await invoiceSearch(page).inputValue(), "");
+        assert.equal(await invoiceSearch(page).evaluate((el) => el === document.activeElement), true);
+        assert.equal(await rows(page).count(), 10);
+        // Escape clears a typed search too.
+        await invoiceSearch(page).fill("client 9");
+        await page.keyboard.press("Escape");
+        assert.equal(await invoiceSearch(page).inputValue(), "");
+      },
+      { setup: seedInvoices(count) },
+    ));
+}
+
+test("a new invoice lands at the top of a long list", () =>
+  fixture(
+    async (page) => {
+      await openNew(page);
+      await drawer(page).getByLabel("Client’s Name").fill("Newest Client");
+      await drawer(page).getByRole("button", { name: "Save as Draft" }).click();
+      await drawer(page).waitFor({ state: "detached" });
+      assert.match(await rows(page).first().innerText(), /Newest Client/);
+      assert.ok(await rows(page).first().isVisible());
+      await page.getByText("Showing 10 of 31 invoices", { exact: true }).waitFor();
+      assert.equal((await stored(page)).invoices[0].clientName, "Newest Client");
+    },
+    { setup: seedInvoices(30) },
+  ));
+
+for (const count of [30, 100]) {
+  test(`${count} invoices at 375px: no sideways scroll and a 16 px search`, () =>
+    fixture(
+      async (page) => {
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375));
+        const size = await invoiceSearch(page).evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+        assert.ok(size >= 16);
+        await showMore(page).click();
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375));
+        // A long unbroken query in the no-match heading wraps instead of widening the page.
+        await invoiceSearch(page).fill("averyveryverylongclientnamewithnospacesatall@example.com");
+        await page.getByRole("heading", { name: /No invoices match/ }).waitFor();
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375));
+      },
+      { width: 375, height: 812, setup: seedInvoices(count) },
+    ));
 }

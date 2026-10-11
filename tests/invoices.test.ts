@@ -175,8 +175,9 @@ test("drafts save partially; Save Changes makes a draft pending; pending becomes
     updateInvoice(paid, "AB1234", fields(complete())).invoices.find((x) => x.id === "AB1234")?.status,
     "paid",
   );
-  // Other records are untouched throughout.
-  assert.deepEqual(paid.invoices.slice(0, 7), seedLibrary.invoices);
+  // The new invoice sits at the top; other records are untouched throughout.
+  assert.equal(paid.invoices[0]?.id, "AB1234");
+  assert.deepEqual(paid.invoices.slice(1), seedLibrary.invoices);
 });
 
 test("payment due is the invoice date plus the terms, across month, leap and year ends", () => {

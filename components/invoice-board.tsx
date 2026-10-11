@@ -4,8 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   displayDate,
   invoiceTotal,
+  LIST_STEP,
   money,
   paymentDue,
+  SEARCH_ABOVE,
+  searchInvoices,
   visibleInvoices,
   type Filter,
 } from "../lib/invoices.ts";
@@ -18,13 +21,13 @@ import { StatusBadge } from "./status-badge";
 
 const plural = (n: number, word: string) => n + " " + word + (n === 1 ? "" : "s");
 
-function countText(total: number, filter: Filter, visible: number) {
-  if (filter.length === 0)
+function countText(total: number, filter: Filter, visible: number, searching: boolean) {
+  if (filter.length === 0 && !searching)
     return {
       wide: total === 1 ? "There is 1 total invoice" : "There are " + total + " total invoices",
       short: plural(total, "invoice"),
     };
-  const which = filter.length === 1 ? filter[0] + " " : "matching ";
+  const which = filter.length === 1 && !searching ? filter[0] + " " : "matching ";
   return {
     wide:
       visible === 1
@@ -45,8 +48,34 @@ export function InvoiceBoard() {
   }, [arrivedWithFlash]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-  const visible = visibleInvoices(library);
-  const count = countText(library.invoices.length, library.filter, visible.length);
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(LIST_STEP);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const searchable = library.invoices.length > SEARCH_ABOVE;
+  const searching = searchable && query.trim() !== "";
+  const visible = searchable ? searchInvoices(visibleInvoices(library), query) : visibleInvoices(library);
+  const shown = visible.slice(0, limit);
+  const count = countText(library.invoices.length, library.filter, visible.length, searching);
+  function search(next: string) {
+    setQuery(next);
+    setLimit(LIST_STEP);
+  }
+  function clearSearch() {
+    search("");
+    searchRef.current?.focus();
+  }
+  // Show more can disappear with the last rows, so focus moves to the first row it revealed.
+  const focusRow = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusRow.current === null) return;
+    listRef.current?.querySelectorAll<HTMLAnchorElement>(".invoice-row")[focusRow.current]?.focus();
+    focusRow.current = null;
+  }, [limit]);
+  function showMore() {
+    focusRow.current = shown.length;
+    setLimit((current) => current + LIST_STEP);
+  }
   return (
     <main id="main" className="page">
       <header className="list-header">
@@ -67,6 +96,7 @@ export function InvoiceBoard() {
           value={library.filter}
           busy={busy}
           onChange={async (filter) => {
+            setLimit(LIST_STEP);
             const result = await commit((current) => ({ ...current, filter }));
             setError(result.ok ? "" : result.message);
           }}
@@ -95,9 +125,32 @@ export function InvoiceBoard() {
           {error}
         </p>
       )}
+      {ready && searchable && (
+        <div className="list-search">
+          <label htmlFor="invoice-search" className="label-text">
+            Search invoices
+          </label>
+          <input
+            id="invoice-search"
+            ref={searchRef}
+            className="input"
+            type="search"
+            value={query}
+            placeholder="Client name or invoice ID"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => search(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || query === "") return;
+              event.preventDefault();
+              search("");
+            }}
+          />
+        </div>
+      )}
       {!ready ? null : visible.length ? (
-        <ul className="invoice-list">
-          {visible.map((invoice) => {
+        <ul ref={listRef} className="invoice-list">
+          {shown.map((invoice) => {
             const due = paymentDue(invoice);
             return (
               <li key={invoice.id}>
@@ -120,6 +173,14 @@ export function InvoiceBoard() {
             );
           })}
         </ul>
+      ) : searching ? (
+        <section className="empty" aria-labelledby="empty-title">
+          <h2 id="empty-title">No invoices match “{query.trim()}”.</h2>
+          <p>Check the spelling of the client name or invoice ID, or clear the search.</p>
+          <button type="button" className="button secondary" onClick={clearSearch}>
+            Clear search
+          </button>
+        </section>
       ) : (
         <section className="empty" aria-labelledby="empty-title">
           {/* eslint-disable-next-line @next/next/no-img-element -- official SVG illustration */}
@@ -137,6 +198,18 @@ export function InvoiceBoard() {
             <p>No invoices match this filter. Change the filter to see the rest.</p>
           )}
         </section>
+      )}
+      {ready && visible.length > LIST_STEP && (
+        <div className="list-more">
+          <p className="muted">
+            Showing {shown.length} of {visible.length} {searching || library.filter.length ? "matching " : ""}invoices
+          </p>
+          {visible.length > shown.length && (
+            <button type="button" className="button secondary" onClick={showMore}>
+              Show more invoices
+            </button>
+          )}
+        </div>
       )}
       {creating && (
         <InvoiceForm

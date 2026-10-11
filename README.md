@@ -15,6 +15,7 @@ Invoices are saved only in this browser (`localStorage`). Nothing is emailed, ch
 - Marks pending invoices as paid.
 - Deletes invoices after a confirmation dialog.
 - Filters by any mix of Draft, Pending and Paid; the filter is remembered.
+- A new invoice goes to the top of the list. Past 10 invoices, the list shows 10 at a time with "Showing X of Y" and **Show more invoices**, and a search finds an invoice by client name or ID (with or without `#`). Escape or **Clear search** empties it.
 - Light and dark themes, remembered and applied before first paint.
 - Line items add, remove and total in pence, so totals never drift.
 - Payment due is the invoice date plus the payment terms.
