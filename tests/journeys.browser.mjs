@@ -871,6 +871,14 @@ for (const count of [30, 100]) {
         // Focus moves to the first row Show more revealed.
         await page.waitForFunction(() => document.activeElement === document.querySelectorAll(".invoice-list > li a")[10]);
 
+        if (count === 30) {
+          // The last Show more disappears with the last rows; focus lands on the first of them, not the page.
+          await showMore(page).click();
+          await page.getByText("Showing 30 of 30 invoices", { exact: true }).waitFor();
+          assert.equal(await showMore(page).count(), 0);
+          await page.waitForFunction(() => document.activeElement === document.querySelectorAll(".invoice-list > li a")[20]);
+        }
+
         await invoiceSearch(page).fill("#sy0007");
         await page.waitForFunction(() => document.querySelectorAll(".invoice-list > li").length === 1);
         assert.ok(await page.getByText("There is 1 matching invoice").isVisible());
@@ -916,6 +924,10 @@ for (const count of [30, 100]) {
         const size = await invoiceSearch(page).evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
         assert.ok(size >= 16);
         await showMore(page).click();
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375));
+        // A long unbroken query in the no-match heading wraps instead of widening the page.
+        await invoiceSearch(page).fill("averyveryverylongclientnamewithnospacesatall@example.com");
+        await page.getByRole("heading", { name: /No invoices match/ }).waitFor();
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375));
       },
       { width: 375, height: 812, setup: seedInvoices(count) },

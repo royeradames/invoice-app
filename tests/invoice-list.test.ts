@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createInvoice, LIST_STEP, librarySchema, SEARCH_ABOVE, searchInvoices, type Invoice, type Library } from "../lib/invoices.ts";
+import { createInvoice, librarySchema, searchInvoices, type Invoice, type Library } from "../lib/invoices.ts";
 import { seedLibrary } from "../lib/fixtures.ts";
 
 const blank = { street: "", city: "", postCode: "", country: "" };
@@ -32,7 +32,6 @@ for (const count of [1, 6, 30, 100]) {
 
   test(`${count} invoices: search finds one by client name or ID, ignoring case, spaces and a leading #`, () => {
     const { invoices } = library(count);
-    assert.equal(count > SEARCH_ABOVE, count >= 30);
     assert.deepEqual(searchInvoices(invoices, "").length, count);
     assert.deepEqual(searchInvoices(invoices, "  #sy0001 ").map((x) => x.id), ["SY0001"]);
     assert.deepEqual(searchInvoices(invoices, "CLIENT 1").map((x) => x.clientName).at(-1), "Client 1");
@@ -40,8 +39,3 @@ for (const count of [1, 6, 30, 100]) {
     assert.deepEqual(searchInvoices(invoices, "nobody"), []);
   });
 }
-
-test("the list shows ten rows at a time", () => {
-  assert.equal(LIST_STEP, 10);
-  assert.equal(SEARCH_ABOVE, 10);
-});

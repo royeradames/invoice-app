@@ -96,6 +96,7 @@ export function InvoiceBoard() {
           value={library.filter}
           busy={busy}
           onChange={async (filter) => {
+            setLimit(LIST_STEP);
             const result = await commit((current) => ({ ...current, filter }));
             setError(result.ok ? "" : result.message);
           }}
@@ -175,7 +176,7 @@ export function InvoiceBoard() {
       ) : searching ? (
         <section className="empty" aria-labelledby="empty-title">
           <h2 id="empty-title">No invoices match “{query.trim()}”.</h2>
-          <p>Search by client name or invoice ID, or clear the search to see every invoice.</p>
+          <p>Check the spelling of the client name or invoice ID, or clear the search.</p>
           <button type="button" className="button secondary" onClick={clearSearch}>
             Clear search
           </button>

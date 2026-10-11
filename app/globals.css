@@ -538,7 +538,11 @@ p {
   }
 }
 
-/* Search and Show more appear once the list passes 10 invoices. */
+/* Search and Show more appear once the list passes 10 invoices. The no-match
+   heading repeats the query, so a long unbroken one must wrap. */
+.empty h2 {
+  overflow-wrap: anywhere;
+}
 .list-search {
   display: grid;
   gap: 8px;
