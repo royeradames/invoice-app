@@ -64,6 +64,20 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const theme = snapshot.library.theme;
   const [flash, setFlash] = useState<Flash | null>(null);
   const pathname = usePathname();
+  const previousPath = useRef(pathname);
+  useEffect(() => {
+    // Wait for the page content; initial hydration keeps the browser's focus.
+    if (!ready || previousPath.current === pathname) return;
+    previousPath.current = pathname;
+    // A page that arrives with a confirmation (after a delete) focuses that
+    // message itself, so it is read aloud.
+    if (flash?.path === pathname) return;
+    const main = document.querySelector<HTMLElement>("main");
+    const target = main?.querySelector<HTMLElement>("h1") ?? main;
+    if (!target) return;
+    target.tabIndex = -1;
+    target.focus();
+  }, [pathname, ready, flash]);
   // A confirmation belongs to one page; leaving that page clears it.
   const [flashPath, setFlashPath] = useState(pathname);
   if (flashPath !== pathname) {
