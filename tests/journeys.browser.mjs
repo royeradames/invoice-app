@@ -104,6 +104,25 @@ test("list opens with the brief's data.json invoices and identity metadata", () 
     assert.equal(ld["@type"], "WebSite");
   }));
 
+test("client-side invoice navigation focuses the detail and list headings", () =>
+  fixture(async (page) => {
+    const listHeading = page.getByRole("heading", { level: 1, name: "Invoices", exact: true });
+    assert.equal(await listHeading.evaluate((el) => el === document.activeElement), false);
+    for (const back of ["link", "history"]) {
+      await rows(page).filter({ hasText: "XM9141" }).click();
+      await page.waitForURL(/\/invoices\/XM9141$/);
+      const detailHeading = page.getByRole("heading", { level: 1, name: "#XM9141", exact: true });
+      await page.waitForFunction(() => document.activeElement === document.querySelector("main h1"));
+      assert.equal(await detailHeading.evaluate((el) => el === document.activeElement), true);
+      assert.equal(await detailHeading.getAttribute("tabindex"), "-1");
+      if (back === "link") await page.getByRole("link", { name: "Go back", exact: true }).click();
+      else await page.goBack();
+      await page.waitForURL(new URL("/", target).href);
+      await page.waitForFunction(() => document.activeElement === document.querySelector("main h1"));
+      assert.equal(await listHeading.evaluate((el) => el === document.activeElement), true);
+    }
+  }));
+
 test("filter by status with checkboxes, by keyboard, and it survives reload", () =>
   fixture(async (page) => {
     const toggle = page.getByRole("button", { name: /Filter by status/ });
