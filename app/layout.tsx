@@ -24,7 +24,6 @@ export const metadata: Metadata = {
   description:
     "Create, edit, filter and mark invoices as paid. Drafts and invoices are saved in this browser only.",
   openGraph: { siteName: SITE_NAME, type: "website" },
-  robots: { index: false, follow: false },
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml", sizes: "any" },

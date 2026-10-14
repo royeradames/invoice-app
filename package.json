@@ -13,7 +13,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:browser": "node --test --test-concurrency=1 tests/journeys.browser.mjs"
+    "test:browser": "node --test --test-concurrency=1 tests/journeys.browser.mjs",
+    "test:indexing": "node --test tests/indexing.server.mjs"
   },
   "dependencies": {
     "@tanstack/react-form": "1.33.5",
