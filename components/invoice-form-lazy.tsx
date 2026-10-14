@@ -1,5 +1,5 @@
 "use client";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { trapTab } from "./dialog";
 import type { InvoiceForm as InvoiceFormComponent } from "./invoice-form";
 
@@ -11,18 +11,46 @@ type Props = Parameters<typeof InvoiceFormComponent>[0];
 const Form = lazy(() => import("./invoice-form").then((m) => ({ default: m.InvoiceForm })));
 
 export function preloadInvoiceForm() {
-  void import("./invoice-form");
+  // A failed preload is not an error here: the press itself fetches again and reports.
+  import("./invoice-form").catch(() => {});
+}
+
+export const formLoadFailedMessage =
+  "The invoice form could not load. Check your connection and try again.";
+
+// If the form's script cannot be fetched (offline, or a deployment rotated its chunks),
+// the drawer closes with a message instead of the page falling over.
+class FormLoadBoundary extends Component<
+  { onFail: () => void; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onFail();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
 }
 
 // While the script is still arriving, the drawer frame is already open and modal, so nothing
 // behind it reacts, Tab stays inside, and Escape, a press on the backdrop or the Cancel button
 // cancels the opening, as they do on the drawer itself.
-function DrawerLoading({ onCancel }: { onCancel: () => void }) {
+function DrawerLoading({ onCancel, returnFocusTo }: { onCancel: () => void; returnFocusTo: Element | null }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const openerRef = useRef(returnFocusTo);
   useEffect(() => {
     const dialog = dialogRef.current;
     dialog?.showModal();
-    return () => dialog?.close();
+    return () => {
+      dialog?.close();
+      // The frame may already be detached here, so give focus back on purpose, as the drawer does.
+      const opener = openerRef.current;
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
   }, []);
   return (
     <dialog
@@ -61,8 +89,10 @@ export function LazyInvoiceForm(props: Props) {
     return active && active !== document.body ? active : null;
   });
   return (
-    <Suspense fallback={<DrawerLoading onCancel={() => props.onClose()} />}>
-      <Form {...props} returnFocusTo={opener} />
-    </Suspense>
+    <FormLoadBoundary onFail={() => props.onClose(formLoadFailedMessage)}>
+      <Suspense fallback={<DrawerLoading onCancel={() => props.onClose()} returnFocusTo={opener} />}>
+        <Form {...props} returnFocusTo={opener} />
+      </Suspense>
+    </FormLoadBoundary>
   );
 }

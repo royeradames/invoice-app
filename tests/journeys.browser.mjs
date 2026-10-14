@@ -982,13 +982,9 @@ test("the drawer frame opens while its form script loads, and Escape cancels it"
     await frame.waitFor({ state: "detached" });
     assert.ok(formScript, "the form's script was requested");
     release();
-    // The chunk's response, then its evaluation: once a script element for that URL has
-    // finished (the browser reports no pending script for it), a reopening would have happened.
+    // The chunk's response, then its script element in the page; a reopening would follow at once.
     await page.waitForResponse((r) => r.url() === formScript);
-    await page.waitForFunction(
-      (url) => [...document.scripts].some((s) => s.src === url) && document.readyState === "complete",
-      formScript,
-    );
+    await page.waitForFunction((url) => [...document.scripts].some((s) => s.src === url), formScript);
     await page.waitForTimeout(300);
     assert.equal(await page.locator("dialog.drawer").count(), 0, "a cancelled drawer stays closed when its script arrives");
     assert.ok(
