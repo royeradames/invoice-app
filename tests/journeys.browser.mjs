@@ -961,10 +961,14 @@ test("the drawer frame opens while its form script loads, and Escape cancels it"
     const held = new Promise((resolve) => {
       release = resolve;
     });
+    let formScript = "";
     await page.route("**/_next/static/chunks/*.js", async (route) => {
       const response = await route.fetch();
       const body = await response.text();
-      if (body.includes("Bill From")) await held;
+      if (body.includes("Bill From")) {
+        formScript = route.request().url();
+        await held;
+      }
       await route.fulfill({ response, body });
     });
     await page.getByRole("button", { name: /New( Invoice)?/ }).click();
@@ -976,8 +980,16 @@ test("the drawer frame opens while its form script loads, and Escape cancels it"
     );
     await page.keyboard.press("Escape");
     await frame.waitFor({ state: "detached" });
+    assert.ok(formScript, "the form's script was requested");
     release();
-    await page.waitForTimeout(500);
+    // The chunk's response, then its evaluation: once a script element for that URL has
+    // finished (the browser reports no pending script for it), a reopening would have happened.
+    await page.waitForResponse((r) => r.url() === formScript);
+    await page.waitForFunction(
+      (url) => [...document.scripts].some((s) => s.src === url) && document.readyState === "complete",
+      formScript,
+    );
+    await page.waitForTimeout(300);
     assert.equal(await page.locator("dialog.drawer").count(), 0, "a cancelled drawer stays closed when its script arrives");
     assert.ok(
       await page.evaluate(() => document.activeElement?.textContent?.trim().startsWith("New")),

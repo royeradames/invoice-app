@@ -1,5 +1,6 @@
 "use client";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { trapTab } from "./dialog";
 import type { InvoiceForm as InvoiceFormComponent } from "./invoice-form";
 
 type Props = Parameters<typeof InvoiceFormComponent>[0];
@@ -14,7 +15,8 @@ export function preloadInvoiceForm() {
 }
 
 // While the script is still arriving, the drawer frame is already open and modal, so nothing
-// behind it reacts, Tab stays inside, and Escape cancels the opening.
+// behind it reacts, Tab stays inside, and Escape, a press on the backdrop or the Cancel button
+// cancels the opening, as they do on the drawer itself.
 function DrawerLoading({ onCancel }: { onCancel: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -29,15 +31,22 @@ function DrawerLoading({ onCancel }: { onCancel: () => void }) {
       aria-label="Invoice form"
       aria-busy="true"
       tabIndex={-1}
+      onKeyDown={trapTab}
       onCancel={(event) => {
         event.preventDefault();
         onCancel();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onCancel();
       }}
     >
       <div className="drawer-body">
         <p className="muted" role="status">
           Loading…
         </p>
+        <button type="button" className="button secondary" onClick={onCancel}>
+          Cancel
+        </button>
       </div>
     </dialog>
   );
