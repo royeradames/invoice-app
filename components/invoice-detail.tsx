@@ -1,5 +1,4 @@
 "use client";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -19,11 +18,9 @@ import {
 } from "../lib/invoices.ts";
 import { Dialog } from "./dialog";
 import { ArrowLeftIcon } from "./icons";
+import { LazyInvoiceForm as InvoiceForm, preloadInvoiceForm } from "./invoice-form-lazy";
 import { useLibrary } from "./library-provider";
 import { StatusBadge } from "./status-badge";
-
-// Same split as the list page: the edit form's script arrives when Edit is pressed.
-const InvoiceForm = dynamic(() => import("./invoice-form").then((m) => m.InvoiceForm));
 
 function GoBack() {
   return (
@@ -115,6 +112,9 @@ export function InvoiceDetail({ id }: { id: string }) {
       <button
         type="button"
         className="button secondary"
+        onPointerEnter={preloadInvoiceForm}
+        onFocus={preloadInvoiceForm}
+        onTouchStart={preloadInvoiceForm}
         onClick={() => {
           if (blocked()) return;
           setFlash(null);
