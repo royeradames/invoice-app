@@ -9,6 +9,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: "Invoice #" + id,
     description: "Status, dates, client and line items for invoice #" + id + ", saved in this browser.",
+    // This route shows the visitor's own browser-saved data, so it stays out of search.
+    robots: { index: false, follow: false },
   };
 }
 export default async function Page({ params }: Props) {
