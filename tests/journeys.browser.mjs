@@ -951,3 +951,36 @@ test("the invoice form's script is not part of the list page's first load", () =
     const after = await loadedScripts(page);
     assert.ok(after.some((s) => s.body.includes("Bill From")), "the form's script arrives with the drawer");
   }));
+
+// While the form's script is still arriving, the drawer frame is already open and modal: Escape
+// cancels the opening, a cancelled drawer does not appear once the script lands, and focus is back
+// on New Invoice.
+test("the drawer frame opens while its form script loads, and Escape cancels it", () =>
+  fixture(async (page) => {
+    let release;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/_next/static/chunks/*.js", async (route) => {
+      const response = await route.fetch();
+      const body = await response.text();
+      if (body.includes("Bill From")) await held;
+      await route.fulfill({ response, body });
+    });
+    await page.getByRole("button", { name: /New( Invoice)?/ }).click();
+    const frame = page.locator("dialog.drawer[aria-busy='true']");
+    await frame.waitFor({ timeout: 5000 });
+    assert.ok(
+      await page.evaluate(() => Boolean(document.activeElement?.closest("dialog.drawer"))),
+      "focus is inside the drawer frame",
+    );
+    await page.keyboard.press("Escape");
+    await frame.waitFor({ state: "detached" });
+    release();
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator("dialog.drawer").count(), 0, "a cancelled drawer stays closed when its script arrives");
+    assert.ok(
+      await page.evaluate(() => document.activeElement?.textContent?.trim().startsWith("New")),
+      "focus returns to New Invoice",
+    );
+  }));
