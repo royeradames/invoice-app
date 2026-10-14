@@ -1,4 +1,5 @@
 "use client";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -15,9 +16,12 @@ import {
 import { FilterMenu } from "./filter-menu";
 import { FlashMessage } from "./flash-message";
 import { ArrowRightIcon, PlusIcon } from "./icons";
-import { InvoiceForm } from "./invoice-form";
 import { useLibrary } from "./library-provider";
 import { StatusBadge } from "./status-badge";
+
+// The form (TanStack Form, zod, the date picker) is only needed once a drawer opens, so its script
+// stays out of the list page's first load.
+const InvoiceForm = dynamic(() => import("./invoice-form").then((m) => m.InvoiceForm));
 
 const plural = (n: number, word: string) => n + " " + word + (n === 1 ? "" : "s");
 
