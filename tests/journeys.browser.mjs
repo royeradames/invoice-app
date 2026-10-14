@@ -933,3 +933,21 @@ for (const count of [30, 100]) {
       { width: 375, height: 812, setup: seedInvoices(count) },
     ));
 }
+
+// The invoice form (TanStack Form, zod, the date picker) travels in its own script, fetched when a
+// drawer opens, so the list page's first load carries less JavaScript to parse.
+async function loadedScripts(page) {
+  return page.evaluate(async () => {
+    const urls = [...document.scripts].map((s) => s.src).filter(Boolean);
+    return Promise.all(urls.map(async (url) => ({ url, body: await (await fetch(url)).text() })));
+  });
+}
+test("the invoice form's script is not part of the list page's first load", () =>
+  fixture(async (page) => {
+    const before = await loadedScripts(page);
+    assert.ok(before.length > 0);
+    assert.deepEqual(before.filter((s) => s.body.includes("Bill From")).map((s) => s.url), []);
+    await openNew(page);
+    const after = await loadedScripts(page);
+    assert.ok(after.some((s) => s.body.includes("Bill From")), "the form's script arrives with the drawer");
+  }));
