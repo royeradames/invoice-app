@@ -15,7 +15,7 @@ import {
 import { FilterMenu } from "./filter-menu";
 import { FlashMessage } from "./flash-message";
 import { ArrowRightIcon, PlusIcon } from "./icons";
-import { InvoiceForm } from "./invoice-form";
+import { LazyInvoiceForm as InvoiceForm, preloadInvoiceForm } from "./invoice-form-lazy";
 import { useLibrary } from "./library-provider";
 import { StatusBadge } from "./status-badge";
 
@@ -104,6 +104,9 @@ export function InvoiceBoard() {
         <button
           type="button"
           className="button primary new-invoice"
+          onPointerEnter={preloadInvoiceForm}
+          onFocus={preloadInvoiceForm}
+          onTouchStart={preloadInvoiceForm}
           onClick={() => {
             if (!ready) return;
             setFlash(null);

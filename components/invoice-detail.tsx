@@ -18,7 +18,7 @@ import {
 } from "../lib/invoices.ts";
 import { Dialog } from "./dialog";
 import { ArrowLeftIcon } from "./icons";
-import { InvoiceForm } from "./invoice-form";
+import { LazyInvoiceForm as InvoiceForm, preloadInvoiceForm } from "./invoice-form-lazy";
 import { useLibrary } from "./library-provider";
 import { StatusBadge } from "./status-badge";
 
@@ -112,6 +112,9 @@ export function InvoiceDetail({ id }: { id: string }) {
       <button
         type="button"
         className="button secondary"
+        onPointerEnter={preloadInvoiceForm}
+        onFocus={preloadInvoiceForm}
+        onTouchStart={preloadInvoiceForm}
         onClick={() => {
           if (blocked()) return;
           setFlash(null);

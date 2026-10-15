@@ -77,9 +77,12 @@ function Field({
 export function InvoiceForm({
   invoice,
   onClose,
+  returnFocusTo,
 }: {
   invoice?: Invoice;
   onClose: (message?: string) => void;
+  /** Where focus goes when the drawer closes; defaults to the element focused when it opened. */
+  returnFocusTo?: Element | null;
 }) {
   const { busy, commit } = useLibrary();
   const [defaults] = useState<FormValues>(() =>
@@ -102,9 +105,10 @@ export function InvoiceForm({
     errorsRef.current = errors;
   });
 
+  const returnFocusRef = useRef(returnFocusTo);
   useEffect(() => {
     const dialog = dialogRef.current;
-    const opener = document.activeElement;
+    const opener = returnFocusRef.current ?? document.activeElement;
     dialog?.showModal();
     return () => {
       dialog?.close();

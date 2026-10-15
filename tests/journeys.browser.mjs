@@ -933,3 +933,62 @@ for (const count of [30, 100]) {
       { width: 375, height: 812, setup: seedInvoices(count) },
     ));
 }
+
+// The invoice form (TanStack Form, zod, the date picker) travels in its own script, fetched when a
+// drawer opens, so the list page's first load carries less JavaScript to parse.
+async function loadedScripts(page) {
+  return page.evaluate(async () => {
+    const urls = [...document.scripts].map((s) => s.src).filter(Boolean);
+    return Promise.all(urls.map(async (url) => ({ url, body: await (await fetch(url)).text() })));
+  });
+}
+test("the invoice form's script is not part of the list page's first load", () =>
+  fixture(async (page) => {
+    const before = await loadedScripts(page);
+    assert.ok(before.length > 0);
+    assert.deepEqual(before.filter((s) => s.body.includes("Bill From")).map((s) => s.url), []);
+    await openNew(page);
+    const after = await loadedScripts(page);
+    assert.ok(after.some((s) => s.body.includes("Bill From")), "the form's script arrives with the drawer");
+  }));
+
+// While the form's script is still arriving, the drawer frame is already open and modal: Escape
+// cancels the opening, a cancelled drawer does not appear once the script lands, and focus is back
+// on New Invoice.
+test("the drawer frame opens while its form script loads, and Escape cancels it", () =>
+  fixture(async (page) => {
+    let release;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    let formScript = "";
+    await page.route("**/_next/static/chunks/*.js", async (route) => {
+      const response = await route.fetch();
+      const body = await response.text();
+      if (body.includes("Bill From")) {
+        formScript = route.request().url();
+        await held;
+      }
+      await route.fulfill({ response, body });
+    });
+    await page.getByRole("button", { name: /New( Invoice)?/ }).click();
+    const frame = page.locator("dialog.drawer[aria-busy='true']");
+    await frame.waitFor({ timeout: 5000 });
+    assert.ok(
+      await page.evaluate(() => Boolean(document.activeElement?.closest("dialog.drawer"))),
+      "focus is inside the drawer frame",
+    );
+    await page.keyboard.press("Escape");
+    await frame.waitFor({ state: "detached" });
+    assert.ok(formScript, "the form's script was requested");
+    release();
+    // The chunk's response, then its script element in the page; a reopening would follow at once.
+    await page.waitForResponse((r) => r.url() === formScript);
+    await page.waitForFunction((url) => [...document.scripts].some((s) => s.src === url), formScript);
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator("dialog.drawer").count(), 0, "a cancelled drawer stays closed when its script arrives");
+    assert.ok(
+      await page.evaluate(() => document.activeElement?.textContent?.trim().startsWith("New")),
+      "focus returns to New Invoice",
+    );
+  }));
