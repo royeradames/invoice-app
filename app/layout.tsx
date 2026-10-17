@@ -8,7 +8,10 @@ import "./globals.css";
 
 // League Spartan is the official design typeface (SIL OFL, see fonts/OFL.txt),
 // self-hosted so the page makes no remote font request.
+// Fonts aren't preloaded: text paints at once in next/font's size-matched fallback (display: swap), so the
+// font files needn't compete with the first paint.
 const spartan = localFont({
+  preload: false,
   src: "./fonts/LeagueSpartan-Variable.woff2",
   variable: "--font-spartan",
   display: "swap",
