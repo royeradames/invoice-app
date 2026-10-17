@@ -1,4 +1,8 @@
-import { z } from "zod";
+import * as z from "zod/mini";
+import en from "zod/v4/locales/en.js";
+
+// Zod Mini ships no locale. English keeps the default issue messages classic Zod gave.
+z.config(en());
 
 // Domain for the Frontend Mentor invoice brief. Money is kept in pence
 // (integers) so totals never pick up binary floating-point error. Totals and
@@ -17,9 +21,9 @@ export const MAX_QUANTITY = 9999;
 export const MAX_PRICE_MINOR = 99_999_999; // £999,999.99
 export const MAX_BYTES = 2_000_000;
 
-export const invoiceIdSchema = z.string().regex(/^[A-Z]{2}\d{4}$/);
+export const invoiceIdSchema = z.string().check(z.regex(/^[A-Z]{2}\d{4}$/));
 export const statusSchema = z.enum(STATUSES);
-export const filterSchema = z.array(statusSchema).max(3);
+export const filterSchema = z.array(statusSchema).check(z.maxLength(3));
 export type Filter = z.infer<typeof filterSchema>;
 
 // ---------- dates ----------
@@ -105,24 +109,20 @@ export function money(minor: number): string {
 }
 
 // ---------- stored records ----------
-const text = (max: number) => z.string().max(max);
-export const addressSchema = z
-  .object({
-    street: text(100),
-    city: text(60),
-    postCode: text(20),
-    country: text(60),
-  })
-  .strict();
+const text = (max: number) => z.string().check(z.maxLength(max));
+export const addressSchema = z.strictObject({
+  street: text(100),
+  city: text(60),
+  postCode: text(20),
+  country: text(60),
+});
 export type Address = z.infer<typeof addressSchema>;
-export const itemSchema = z
-  .object({
-    id: z.uuid(),
-    name: text(100),
-    quantity: z.number().int().min(1).max(MAX_QUANTITY).nullable(),
-    priceMinor: z.number().int().min(0).max(MAX_PRICE_MINOR).nullable(),
-  })
-  .strict();
+export const itemSchema = z.strictObject({
+  id: z.uuid(),
+  name: text(100),
+  quantity: z.nullable(z.number().check(z.int(), z.gte(1), z.lte(MAX_QUANTITY))),
+  priceMinor: z.nullable(z.number().check(z.int(), z.gte(0), z.lte(MAX_PRICE_MINOR))),
+});
 export type Item = z.infer<typeof itemSchema>;
 const termsSchema = z.union([
   z.literal(1),
@@ -131,47 +131,49 @@ const termsSchema = z.union([
   z.literal(30),
 ]);
 export const invoiceSchema = z
-  .object({
+  .strictObject({
     id: invoiceIdSchema,
     status: statusSchema,
-    createdAt: z.string().max(10),
+    createdAt: z.string().check(z.maxLength(10)),
     paymentTerms: termsSchema,
     description: text(200),
     clientName: text(100),
     clientEmail: text(254),
     senderAddress: addressSchema,
     clientAddress: addressSchema,
-    items: z.array(itemSchema).max(MAX_ITEMS),
+    items: z.array(itemSchema).check(z.maxLength(MAX_ITEMS)),
   })
-  .strict()
-  .superRefine((invoice, ctx) => {
-    // Drafts may be partial; pending and paid must be complete.
-    const problems = issues(invoice, invoice.status === "draft" ? "draft" : "send");
-    if (problems.length)
-      ctx.addIssue({ code: "custom", message: problems.join(" ") });
-    if (new Set(invoice.items.map((x) => x.id)).size !== invoice.items.length)
-      ctx.addIssue({ code: "custom", message: "Line item IDs must be unique." });
-  });
+  .check(
+    z.superRefine((invoice, ctx) => {
+      // Drafts may be partial; pending and paid must be complete.
+      const problems = issues(invoice, invoice.status === "draft" ? "draft" : "send");
+      if (problems.length)
+        ctx.addIssue({ code: "custom", message: problems.join(" ") });
+      if (new Set(invoice.items.map((x) => x.id)).size !== invoice.items.length)
+        ctx.addIssue({ code: "custom", message: "Line item IDs must be unique." });
+    }),
+  );
 export type Invoice = z.infer<typeof invoiceSchema>;
 export type InvoiceFields = Omit<Invoice, "id" | "status">;
 
 export const librarySchema = z
-  .object({
+  .strictObject({
     version: z.literal(2),
     revision: z.uuid(),
-    invoices: z.array(invoiceSchema).max(MAX_INVOICES),
+    invoices: z.array(invoiceSchema).check(z.maxLength(MAX_INVOICES)),
     theme: z.enum(["light", "dark"]),
     filter: filterSchema,
   })
-  .strict()
-  .superRefine((v, ctx) => {
-    if (new Set(v.invoices.map((x) => x.id)).size !== v.invoices.length)
-      ctx.addIssue({
-        code: "custom",
-        path: ["invoices"],
-        message: "Invoice IDs must be unique.",
-      });
-  });
+  .check(
+    z.superRefine((v, ctx) => {
+      if (new Set(v.invoices.map((x) => x.id)).size !== v.invoices.length)
+        ctx.addIssue({
+          code: "custom",
+          path: ["invoices"],
+          message: "Invoice IDs must be unique.",
+        });
+    }),
+  );
 export type Library = z.infer<typeof librarySchema>;
 
 const EMAIL = z.email();
