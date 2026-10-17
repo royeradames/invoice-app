@@ -96,7 +96,14 @@ test("seed is the brief's data.json: 7 invoices, its totals and its due dates", 
 });
 
 test("new IDs are two uppercase letters and four digits, never reusing one", () => {
-  for (let i = 0; i < 200; i++) assert.match(newInvoiceId(new Set()), /^[A-Z]{2}\d{4}$/);
+  const taken = new Set<string>();
+  const count = 200;
+  for (let i = 0; i < count; i++) {
+    const id = newInvoiceId(taken);
+    assert.match(id, /^[A-Z]{2}\d{4}$/);
+    taken.add(id);
+  }
+  assert.equal(taken.size, count);
   // A random source that first returns a taken ID, then a free one.
   const values = [0, 0, 0, 0, 0, 0, 0.99, 0, 0, 0, 0, 0];
   let i = 0;
